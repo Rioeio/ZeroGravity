@@ -57,3 +57,12 @@ def get_all_known_packages() -> List[str]:
     Returns a list of all package names in the lookup table.
     """
     return list(SYSTEM_DEPENDENCY_MAP.keys())
+
+def get_all_required_system_binaries() -> list[str]:
+    """
+    Returns a list of all unique binary names listed in SYSTEM_DEPENDENCY_MAP.values().
+    """
+    binaries = set()
+    for req_bins in SYSTEM_DEPENDENCY_MAP.values():
+        binaries.update(req_bins)
+    return sorted(list(binaries))

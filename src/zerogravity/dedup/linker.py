@@ -74,6 +74,14 @@ class CrossPlatformLinker:
             return False
             
         try:
+            # First attempt to fix permissions if it's read-only
+            if sys.platform == "win32":
+                import stat
+                try:
+                    os.chmod(path, stat.S_IWRITE)
+                except Exception:
+                    pass
+            
             if sys.platform == "win32" and path.is_dir():
                 os.rmdir(path)
             else:

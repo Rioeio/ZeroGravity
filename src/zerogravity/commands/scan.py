@@ -17,9 +17,9 @@ from zerogravity.ui.console import console, print_banner, print_section, print_e
 
 
 def scan_command(
-    path: Optional[str] = typer.Argument(
+    paths: Optional[list[str]] = typer.Argument(
         None,
-        help="Project directory to scan. Defaults to current directory.",
+        help="Project directories to scan. Defaults to current directory.",
     ),
     output_format: str = typer.Option(
         "table",
@@ -33,9 +33,25 @@ def scan_command(
         "-v",
         help="Show detailed output including all OK checks.",
     ),
+    heal: bool = typer.Option(
+        False,
+        "--heal",
+        help="Run self-healing after scan.",
+    ),
+    no_history: bool = typer.Option(
+        False,
+        "--no-history",
+        help="Bypass historical cross-project checks.",
+    ),
+    recursive: bool = typer.Option(
+        False,
+        "--recursive",
+        "-r",
+        help="Search for all subdirectories containing manifest files.",
+    ),
 ) -> None:
     """
-    Scan a project directory for dependency conflicts, missing binaries,
+    Scan project directories for dependency conflicts, missing binaries,
     and environment mismatches.
     """
     from zerogravity.parsers.registry import detect_and_parse
@@ -50,20 +66,46 @@ def scan_command(
         render_project_manifest,
     )
 
-    project_path = Path(path).resolve() if path else Path.cwd()
+    project_paths = [Path(p).resolve() for p in paths] if paths else [Path.cwd()]
 
-    if not project_path.is_dir():
-        print_error(f"Not a directory: {project_path}")
-        raise typer.Exit(code=1)
+    for project_path in project_paths:
+        if not project_path.is_dir():
+            print_error(f"Not a directory: {project_path}")
+            raise typer.Exit(code=1)
 
     print_banner()
 
     # ── Step 1: Parse project manifests ──────────────────────────────────
+    manifests = []
     with console.status("[zg.accent]Parsing project manifests...[/]", spinner="dots"):
-        manifests = detect_and_parse(project_path)
+        for project_path in project_paths:
+            if recursive:
+                for sub_path in project_path.rglob("*"):
+                    if sub_path.is_dir():
+                        sub_manifests = detect_and_parse(sub_path)
+                        if sub_manifests:
+                            manifests.extend(sub_manifests)
+                # also check the root itself
+                root_manifests = detect_and_parse(project_path)
+                if root_manifests:
+                    manifests.extend(root_manifests)
+            else:
+                project_manifests = detect_and_parse(project_path)
+                if project_manifests:
+                    manifests.extend(project_manifests)
+                    
+        # Remove duplicates
+        seen = set()
+        unique_manifests = []
+        for m in manifests:
+            if m.project_path not in seen:
+                seen.add(m.project_path)
+                unique_manifests.append(m)
+        manifests = unique_manifests
 
     if not manifests:
-        print_info(f"No supported manifest files found in {project_path}")
+        paths_str = ", ".join(str(p) for p in project_paths)
+        print_info(f"No supported manifest files found in {paths_str}")
         print_info("Supported: package.json, requirements.txt, pyproject.toml")
     else:
         print_section("Project Manifests")
@@ -87,7 +129,7 @@ def scan_command(
 
     # ── Step 3: Run conflict detection ───────────────────────────────────
     with console.status("[zg.accent]Analyzing conflicts...[/]", spinner="dots"):
-        report = detect_conflicts(manifests, snapshot)
+        report = detect_conflicts(manifests, snapshot, include_history=not no_history)
 
     render_conflict_report(report)
 
@@ -118,3 +160,8 @@ def scan_command(
             "summary": report.summary,
         }
         console.print_json(json.dumps(result))
+
+    if heal:
+        from zerogravity.commands.heal import heal_command
+        # If multiple paths, we just heal the first one or we'd need to change heal command
+        heal_command(path=str(project_paths[0]) if project_paths else None, auto_approve=False)

@@ -134,6 +134,11 @@ class DeduplicationEngine:
                 # Move to store and create link
                 shutil.move(str(dep_path), str(store_package_path))
                 
+                # Make store files read-only
+                for root, _, files in os.walk(store_package_path):
+                    for file in files:
+                        os.chmod(os.path.join(root, file), 0o444)
+                
                 link_result = self.linker.create_link(store_package_path, dep_path)
                 if link_result.status == "error":
                     # Rollback
@@ -164,6 +169,10 @@ class DeduplicationEngine:
         try:
             self.linker.remove_link(dep_path)
             shutil.copytree(target_path, dep_path)
+            # Restore write permissions
+            for root, _, files in os.walk(dep_path):
+                for file in files:
+                    os.chmod(os.path.join(root, file), 0o644)
             self.registry.remove_link(str(dep_path))
             return RestoreResult("success", dep_path)
         except Exception as e:

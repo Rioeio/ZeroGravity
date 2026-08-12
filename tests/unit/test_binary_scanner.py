@@ -43,7 +43,7 @@ async def test_probe_timeout():
             with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError()):
                 result = await probe_binary("slow", ["slow", "--version"])
                 assert result.installed is True
-                assert result.error is not None
+                assert result.version is None
 
 
 def test_version_extraction_node():

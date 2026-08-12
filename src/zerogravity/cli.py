@@ -11,7 +11,7 @@ import typer
 from rich.console import Console
 
 from zerogravity import __version__
-from zerogravity.commands import scan, audit, dedup, status
+from zerogravity.commands import scan, audit, dedup, status, heal
 
 # ── App setup ───────────────────────────────────────────────────────────────
 app = typer.Typer(
@@ -32,6 +32,7 @@ app.command(name="scan", help="[bold cyan]Scan[/] a project directory for depend
 app.command(name="audit", help="[bold cyan]Audit[/] your OS environment — binaries, version managers, env vars.")(audit.audit_command)
 app.add_typer(dedup.dedup_app, name="dedup", help="[bold cyan]Deduplicate[/] dependency folders across projects.")
 app.command(name="status", help="[bold cyan]Status[/] dashboard — system health at a glance.")(status.status_command)
+app.command(name="heal", help="[bold cyan]Self-heal[/] runtime environment mismatches.")(heal.heal_command)
 
 
 # ── Version callback ────────────────────────────────────────────────────────

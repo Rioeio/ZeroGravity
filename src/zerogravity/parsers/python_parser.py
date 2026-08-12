@@ -216,6 +216,55 @@ class PythonParser(BaseParser):
                 lockfile_path = str(path / "Pipfile.lock")
                 manifest_files.append(lockfile_path)
 
+        if lockfile_present and lockfile_path:
+            direct_dep_names = {dep.name.lower() for dep in dependencies}
+            resolved_map = {}
+            lockfile_name = Path(lockfile_path).name
+            
+            if lockfile_name == "poetry.lock":
+                try:
+                    with open(lockfile_path, "rb") as f:
+                        lock_data = tomllib.load(f)
+                    if "package" in lock_data:
+                        for pkg in lock_data["package"]:
+                            name = pkg.get("name")
+                            version = pkg.get("version")
+                            if name and version:
+                                resolved_map[name.lower()] = version
+                except (tomllib.TOMLDecodeError, OSError):
+                    pass
+            elif lockfile_name == "Pipfile.lock":
+                import json
+                try:
+                    with open(lockfile_path, "r", encoding="utf-8") as f:
+                        lock_data = json.load(f)
+                    for section in ["default", "develop"]:
+                        if section in lock_data:
+                            for name, details in lock_data[section].items():
+                                version = details.get("version", "").lstrip("=")
+                                if version:
+                                    resolved_map[name.lower()] = version
+                except (json.JSONDecodeError, OSError):
+                    pass
+
+            for dep in dependencies:
+                if dep.name.lower() in resolved_map:
+                    dep.resolved_version = resolved_map[dep.name.lower()]
+            
+            for pkg_name_lower, pkg_version in resolved_map.items():
+                if pkg_name_lower not in direct_dep_names:
+                    dependencies.append(
+                        Dependency(
+                            name=pkg_name_lower,
+                            version_spec=pkg_version,
+                            resolved_version=pkg_version,
+                            dep_type=DependencyType.PRODUCTION,
+                            extras=[],
+                            source=lockfile_name,
+                            metadata={"transitive": True}
+                        )
+                    )
+
         return ProjectManifest(
             project_path=path,
             project_name=project_name,

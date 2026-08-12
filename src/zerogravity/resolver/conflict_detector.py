@@ -133,20 +133,33 @@ def _check_lockfiles(manifest: ProjectManifest) -> List[Issue]:
         ))
     return issues
 
-def detect_conflicts(manifests: List[ProjectManifest], snapshot: SystemSnapshot) -> ResolutionReport:
+def detect_conflicts(manifests: List[ProjectManifest], snapshot: SystemSnapshot, include_history: bool = True) -> ResolutionReport:
     """
     Main entry point. Runs all detection rules and aggregates into a single ResolutionReport.
     """
+    from zerogravity.resolver.history import ScanHistoryManager
+    
     issues = []
     
     # Cross-project checks
-    issues.extend(_check_cross_project_conflicts(manifests, snapshot))
+    all_manifests = list(manifests)
+    if include_history:
+        history_mgr = ScanHistoryManager()
+        hist_manifests = history_mgr.load_recent_manifests()
+        current_paths = {m.project_path for m in manifests}
+        for hm in hist_manifests:
+            if hm.project_path not in current_paths:
+                all_manifests.append(hm)
+
+    issues.extend(_check_cross_project_conflicts(all_manifests, snapshot))
     
-    # Per-manifest checks
     for manifest in manifests:
         issues.extend(_check_engine_constraints(manifest, snapshot))
         issues.extend(_check_missing_system_deps(manifest, snapshot))
         issues.extend(_check_lockfiles(manifest))
+        
+    if include_history:
+        ScanHistoryManager().save_manifests(manifests)
         
     return ResolutionReport(
         issues=issues,

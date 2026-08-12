@@ -25,6 +25,15 @@ def normalize_npm_specifier(spec: str) -> str:
     if not spec or spec in ("*", "latest", "x", "X"):
         return "*"
         
+    if "||" in spec:
+        return " || ".join(normalize_npm_specifier(s.strip()) for s in spec.split("||"))
+        
+    # Handle 18.x, 18.X, 18.*, 18.*.*, ~18
+    match = re.match(r"^(?:~)?(\d+)(?:\.[xX\*](?:\.[xX\*])?)?$", spec)
+    if match:
+        major = int(match.group(1))
+        return f">={major}.0.0,<{major+1}.0.0"
+
     # For complex ranges with ||, take the union (check if version satisfies ANY).
     # Since PEP440 SpecifierSet doesn't support OR, we split and evaluate later,
     # but here we'll just parse the components or leave them for compare_version.
@@ -74,6 +83,7 @@ def compare_version(required_spec: str, installed_version: str) -> Severity:
     
     matched_any = False
     is_newer = False
+    valid_specifier_parsed = False
     
     for s in specs:
         norm_spec = normalize_npm_specifier(s)
@@ -82,6 +92,7 @@ def compare_version(required_spec: str, installed_version: str) -> Severity:
             
         try:
             spec_set = SpecifierSet(norm_spec)
+            valid_specifier_parsed = True
             if parsed_version in spec_set:
                 matched_any = True
                 break
@@ -95,6 +106,9 @@ def compare_version(required_spec: str, installed_version: str) -> Severity:
         except Exception:
             continue
             
+    if not valid_specifier_parsed:
+        return Severity.INFO
+        
     if matched_any:
         return Severity.OK
     elif is_newer:

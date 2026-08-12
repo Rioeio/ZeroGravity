@@ -60,7 +60,9 @@ class DeduplicationRegistry:
     def _get_connection(self) -> sqlite3.Connection:
         if self.conn:
             return self.conn
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=10.0)
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=5000;")
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -68,14 +70,13 @@ class DeduplicationRegistry:
         """Register a new package in the store."""
         conn = self._get_connection()
         try:
-            conn.execute(
-                '''INSERT OR IGNORE INTO packages 
-                   (hash, store_path, size_bytes, file_count, created_at) 
-                   VALUES (?, ?, ?, ?, ?)''',
-                (hash, store_path, size_bytes, file_count, datetime.utcnow().isoformat())
-            )
-            if not self.conn:
-                conn.commit()
+            with conn:
+                conn.execute(
+                    '''INSERT OR IGNORE INTO packages 
+                       (hash, store_path, size_bytes, file_count, created_at) 
+                       VALUES (?, ?, ?, ?, ?)''',
+                    (hash, store_path, size_bytes, file_count, datetime.utcnow().isoformat())
+                )
         finally:
             if not self.conn:
                 conn.close()
@@ -84,14 +85,13 @@ class DeduplicationRegistry:
         """Register a new link to a package."""
         conn = self._get_connection()
         try:
-            conn.execute(
-                '''INSERT INTO links 
-                   (hash, link_path, project_path, original_path, created_at) 
-                   VALUES (?, ?, ?, ?, ?)''',
-                (hash, link_path, project_path, original_path, datetime.utcnow().isoformat())
-            )
-            if not self.conn:
-                conn.commit()
+            with conn:
+                conn.execute(
+                    '''INSERT INTO links 
+                       (hash, link_path, project_path, original_path, created_at) 
+                       VALUES (?, ?, ?, ?, ?)''',
+                    (hash, link_path, project_path, original_path, datetime.utcnow().isoformat())
+                )
         finally:
             if not self.conn:
                 conn.close()
@@ -100,9 +100,10 @@ class DeduplicationRegistry:
         """Retrieve package information by hash."""
         conn = self._get_connection()
         try:
-            cursor = conn.execute('SELECT * FROM packages WHERE hash = ?', (hash,))
-            row = cursor.fetchone()
-            return dict(row) if row else None
+            with conn:
+                cursor = conn.execute('SELECT * FROM packages WHERE hash = ?', (hash,))
+                row = cursor.fetchone()
+                return dict(row) if row else None
         finally:
             if not self.conn:
                 conn.close()
@@ -111,8 +112,9 @@ class DeduplicationRegistry:
         """Retrieve all links associated with a package hash."""
         conn = self._get_connection()
         try:
-            cursor = conn.execute('SELECT * FROM links WHERE hash = ?', (hash,))
-            return [dict(row) for row in cursor.fetchall()]
+            with conn:
+                cursor = conn.execute('SELECT * FROM links WHERE hash = ?', (hash,))
+                return [dict(row) for row in cursor.fetchall()]
         finally:
             if not self.conn:
                 conn.close()
@@ -121,8 +123,9 @@ class DeduplicationRegistry:
         """Retrieve all active links."""
         conn = self._get_connection()
         try:
-            cursor = conn.execute('SELECT * FROM links')
-            return [dict(row) for row in cursor.fetchall()]
+            with conn:
+                cursor = conn.execute('SELECT * FROM links')
+                return [dict(row) for row in cursor.fetchall()]
         finally:
             if not self.conn:
                 conn.close()
@@ -131,9 +134,8 @@ class DeduplicationRegistry:
         """Remove a link from the registry."""
         conn = self._get_connection()
         try:
-            conn.execute('DELETE FROM links WHERE link_path = ?', (link_path,))
-            if not self.conn:
-                conn.commit()
+            with conn:
+                conn.execute('DELETE FROM links WHERE link_path = ?', (link_path,))
         finally:
             if not self.conn:
                 conn.close()
@@ -142,10 +144,9 @@ class DeduplicationRegistry:
         """Remove a package and all its associated links from the registry."""
         conn = self._get_connection()
         try:
-            conn.execute('DELETE FROM links WHERE hash = ?', (hash,))
-            conn.execute('DELETE FROM packages WHERE hash = ?', (hash,))
-            if not self.conn:
-                conn.commit()
+            with conn:
+                conn.execute('DELETE FROM links WHERE hash = ?', (hash,))
+                conn.execute('DELETE FROM packages WHERE hash = ?', (hash,))
         finally:
             if not self.conn:
                 conn.close()
@@ -158,33 +159,34 @@ class DeduplicationRegistry:
         """Generate a report on deduplication savings."""
         conn = self._get_connection()
         try:
-            cursor = conn.execute('''
-                SELECT 
-                    COUNT(*) as total_packages,
-                    SUM(size_bytes) as total_bytes_stored,
-                    MAX(size_bytes) as largest_package_bytes
-                FROM packages
-            ''')
-            pkg_stats = dict(cursor.fetchone() or {})
-            
-            cursor = conn.execute('SELECT COUNT(*) as total_links FROM links')
-            link_stats = dict(cursor.fetchone() or {})
-            
-            total_packages = pkg_stats.get('total_packages') or 0
-            total_links = link_stats.get('total_links') or 0
-            total_bytes_stored = pkg_stats.get('total_bytes_stored') or 0
-            largest_package_bytes = pkg_stats.get('largest_package_bytes') or 0
-            
-            avg_size = (total_bytes_stored / total_packages) if total_packages > 0 else 0
-            estimated_bytes_saved = int((total_links - total_packages) * avg_size) if total_links > total_packages else 0
-            
-            return {
-                "total_packages": total_packages,
-                "total_links": total_links,
-                "total_bytes_stored": total_bytes_stored,
-                "estimated_bytes_saved": estimated_bytes_saved,
-                "largest_package_bytes": largest_package_bytes
-            }
+            with conn:
+                cursor = conn.execute('''
+                    SELECT 
+                        COUNT(*) as total_packages,
+                        SUM(size_bytes) as total_bytes_stored,
+                        MAX(size_bytes) as largest_package_bytes
+                    FROM packages
+                ''')
+                pkg_stats = dict(cursor.fetchone() or {})
+                
+                cursor = conn.execute('SELECT COUNT(*) as total_links FROM links')
+                link_stats = dict(cursor.fetchone() or {})
+                
+                total_packages = pkg_stats.get('total_packages') or 0
+                total_links = link_stats.get('total_links') or 0
+                total_bytes_stored = pkg_stats.get('total_bytes_stored') or 0
+                largest_package_bytes = pkg_stats.get('largest_package_bytes') or 0
+                
+                avg_size = (total_bytes_stored / total_packages) if total_packages > 0 else 0
+                estimated_bytes_saved = int((total_links - total_packages) * avg_size) if total_links > total_packages else 0
+                
+                return {
+                    "total_packages": total_packages,
+                    "total_links": total_links,
+                    "total_bytes_stored": total_bytes_stored,
+                    "estimated_bytes_saved": estimated_bytes_saved,
+                    "largest_package_bytes": largest_package_bytes
+                }
         finally:
             if not self.conn:
                 conn.close()

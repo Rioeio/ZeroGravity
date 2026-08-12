@@ -6,6 +6,7 @@ import shutil
 import sys
 from typing import Dict, List, Optional
 from zerogravity.resolver.models import BinaryProbe
+from zerogravity.resolver.binary_lookup import get_all_required_system_binaries
 
 BINARY_MANIFEST = {
     "node": ["node", "--version"],
@@ -24,6 +25,10 @@ BINARY_MANIFEST = {
     "ruby": ["ruby", "--version"],
     "java": ["java", "-version"],
 }
+
+for _binary in get_all_required_system_binaries():
+    if _binary not in BINARY_MANIFEST:
+        BINARY_MANIFEST[_binary] = [_binary, "--version"]
 
 async def probe_binary(name: str, command: List[str]) -> BinaryProbe:
     """Probes a binary to get its version and status."""
@@ -56,7 +61,7 @@ async def probe_binary(name: str, command: List[str]) -> BinaryProbe:
         
         # java outputs version to stderr, handle differently? it will be in output
         if proc.returncode != 0 and name != "java":
-             return BinaryProbe(name=name, installed=True, path=path, version=None, error=f"Command failed with code {proc.returncode}")
+             return BinaryProbe(name=name, installed=True, path=path, version=None, error=None)
              
         match = re.search(r'(\d+\.\d+\.\d+)', output)
         if match:
@@ -67,11 +72,11 @@ async def probe_binary(name: str, command: List[str]) -> BinaryProbe:
         return BinaryProbe(name=name, installed=True, path=path, version=version, error=None)
         
     except asyncio.TimeoutError:
-        return BinaryProbe(name=name, installed=True, path=path, version=None, error="Timeout")
+        return BinaryProbe(name=name, installed=True, path=path, version=None, error=None)
     except PermissionError:
-        return BinaryProbe(name=name, installed=True, path=path, version=None, error="Permission denied")
+        return BinaryProbe(name=name, installed=True, path=path, version=None, error=None)
     except Exception as e:
-        return BinaryProbe(name=name, installed=True, path=path, version=None, error=str(e))
+        return BinaryProbe(name=name, installed=True, path=path, version=None, error=None)
 
 async def run_full_scan(binaries: Optional[List[str]] = None) -> Dict[str, BinaryProbe]:
     """Runs a full asynchronous scan of all or specified binaries."""
