@@ -1,0 +1,56 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "zerogravity"
+version = "0.1.0"
+description = "Bridge the gap between project dependencies and your local OS. Deep binary mapping, cross-project conflict detection, smart deduplication, and automated environment self-healing."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [
+    { name = "ZeroGravity Team" },
+]
+keywords = ["developer-tools", "dependency-management", "environment", "deduplication", "cli"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: System :: Systems Administration",
+]
+dependencies = [
+    "typer>=0.15.0",
+    "rich>=14.0.0",
+    "pyyaml>=6.0",
+    "packaging>=24.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.25.0",
+    "pytest-cov>=6.0.0",
+]
+
+[project.scripts]
+zg = "zerogravity.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/zerogravity-dev/zerogravity"
+Repository = "https://github.com/zerogravity-dev/zerogravity"
+Issues = "https://github.com/zerogravity-dev/zerogravity/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/zerogravity"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
