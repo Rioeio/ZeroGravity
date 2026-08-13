@@ -79,7 +79,7 @@ def heal_command(
 
     success_count = 0
     for plan in plans:
-        if engine.execute_plan(plan, auto_approve=auto_approve):
+        if engine.execute_plan(plan, snapshot, auto_approve=auto_approve):
             console.print(f"[green]✓ Success:[/] {' '.join(plan.command)}")
             success_count += 1
         else:

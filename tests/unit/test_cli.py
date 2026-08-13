@@ -120,3 +120,28 @@ def test_heal_command_dry_run(node_project_path: Path):
     result = runner.invoke(app, ["heal", str(node_project_path), "--auto-approve"])
     assert result.exit_code == 0
     assert "Conflict Report" in result.stdout
+
+
+def test_heal_command_executes_nvm_remediation(node_project_path: Path, tmp_path: Path):
+    """
+    End-to-end: with a fake nvm.sh present and version_managers reporting it,
+    zg heal --auto-approve should actually invoke it (via bash -c, sourced)
+    rather than silently no-op'ing like the shell=True/list-args bug did.
+    """
+    from unittest.mock import MagicMock, patch
+    from zerogravity.resolver.models import VersionManagerInfo
+
+    (tmp_path / "nvm.sh").write_text("# fake nvm.sh")
+
+    with patch(
+        "zerogravity.scanner.version_manager.detect_all_managers_sync",
+        return_value={"nvm": VersionManagerInfo(name="nvm", detected=True, root_path=str(tmp_path))},
+    ), patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+        result = runner.invoke(app, ["heal", str(node_project_path), "--auto-approve"])
+
+    assert result.exit_code == 0
+    if mock_run.called:
+        args = mock_run.call_args[0][0]
+        assert args[0] == "bash"
+        assert args[1] == "-c"
