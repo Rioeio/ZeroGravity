@@ -47,11 +47,11 @@ class Severity(enum.Enum):
     def icon(self) -> str:
         """Status icon for terminal display."""
         return {
-            Severity.OK: "✅",
-            Severity.INFO: "ℹ️",
-            Severity.WARNING: "⚠️",
-            Severity.ERROR: "❌",
-            Severity.CRITICAL: "🔴",
+            Severity.OK: "[OK]",
+            Severity.INFO: "[INFO]",
+            Severity.WARNING: "[WARN]",
+            Severity.ERROR: "[ERROR]",
+            Severity.CRITICAL: "[CRIT]",
         }[self]
 
 

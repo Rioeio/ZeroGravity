@@ -43,13 +43,13 @@ def status_command() -> None:
 
     if health_pct == 100:
         health_color = "zg.ok"
-        health_icon = "✅"
+        health_icon = "[OK]"
     elif health_pct >= 70:
         health_color = "zg.warning"
-        health_icon = "⚠️"
+        health_icon = "[WARN]"
     else:
         health_color = "zg.error"
-        health_icon = "❌"
+        health_icon = "[ERROR]"
 
     # Platform panel
     os_info = f"{platform_info.get('os_name', '?')} {platform_info.get('os_version', '')}"

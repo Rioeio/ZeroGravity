@@ -44,21 +44,21 @@ Most developer tools operate in silos: package managers read `package.json` or `
 
 ## Key Features
 
-### 🔍 1. Deep System-Binary Mapping
-Traditional package managers assume system libraries are pre-installed. ZeroGravity parses both direct and transitive dependencies from lockfiles and cross-references them against required C libraries and system tools (e.g., `cryptography` $\rightarrow$ `openssl`, `psycopg2` $\rightarrow$ `pg_config`, `canvas` $\rightarrow$ `pkg-config`/`cairo`, `sharp` $\rightarrow$ `vips`).
+### 1. Deep System-Binary Mapping
+Traditional package managers assume system libraries are pre-installed. ZeroGravity parses both direct and transitive dependencies from lockfiles and cross-references them against required C libraries and system tools (e.g., `cryptography` -> `openssl`, `psycopg2` -> `pg_config`, `canvas` -> `pkg-config`/`cairo`, `sharp` -> `vips`).
 
-### 📡 2. Cross-Project Conflict Radar & Scan History
+### 2. Cross-Project Conflict Radar & Scan History
 When working on multiple repositories, runtime requirements often clash (e.g., Project A requiring Node 18 while Project B requires Node 20). `zg scan` maintains a persistent local history ledger (`~/.zerogravity/scan_history.json`) to detect cross-project version conflicts across workspace directories over time.
 
-### 🩹 3. Automated Environment Self-Healing (`zg heal`)
+### 3. Automated Environment Self-Healing (`zg heal`)
 ZeroGravity doesn't just surface issues — it resolves them. `zg heal` detects installed version managers (`nvm`, `pyenv`, `rustup`), resolves version range specifiers into clean releases, and executes non-destructive remediation commands (e.g., `nvm install 18 && nvm use 18`, `pyenv install -s 3.11.4 && pyenv local 3.11.4`).
 
-### 📦 4. Multi-Ecosystem Transitive Lockfile Parsing
+### 4. Multi-Ecosystem Transitive Lockfile Parsing
 Performs deep lockfile inspection for:
 - **Node.js**: `package-lock.json` (v1/v2/v3), `yarn.lock` (v1 & Berry multi-selectors), `pnpm-lock.yaml` (pnpm 6–11 key schemas).
 - **Python**: `requirements.txt`, `pyproject.toml`, `poetry.lock`, `Pipfile.lock`.
 
-### ♻️ 5. Virtualized Symlinking & Smart Deduplication
+### 5. Virtualized Symlinking & Smart Deduplication
 Scans projects for duplicate dependency folders (`node_modules`, `.venv`, `vendor`), computes deterministic SHA-256 content hashes, moves packages into a global store (`~/.zerogravity/store`), and creates Windows Junction Points (`mklink /J`) or POSIX symlinks.
 - **Read-Only Protection**: Ingested store packages are marked read-only (`chmod 0444`) to prevent accidental cross-project mutation.
 - **Concurrency Safety**: Registry operations use SQLite WAL mode (`journal_mode=WAL`) and busy timeouts for process safety.
@@ -179,4 +179,4 @@ mypy
 
 ## License
 
-Distributed under the [MIT License](LICENSE). Copyright © 2026 ZeroGravity Team.
+Distributed under the [MIT License](LICENSE). Copyright (c) 2026 ZeroGravity Team.

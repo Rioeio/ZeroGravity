@@ -81,10 +81,10 @@ def render_system_snapshot(snapshot: SystemSnapshot) -> None:
 def _format_binary_status(probe: BinaryProbe) -> str:
     """Format a binary probe result as a styled status string."""
     if not probe.installed:
-        return "[zg.error]● NOT FOUND[/]"
+        return "[zg.error]NOT FOUND[/]"
     if probe.error:
-        return "[zg.warning]● ERROR[/]"
-    return "[zg.ok]● INSTALLED[/]"
+        return "[zg.warning]ERROR[/]"
+    return "[zg.ok]INSTALLED[/]"
 
 
 def _render_version_managers(managers: dict[str, VersionManagerInfo]) -> None:
@@ -134,7 +134,7 @@ def render_conflict_report(report: ResolutionReport) -> None:
     if not report.issues:
         console.print(
             Panel(
-                "[zg.ok]✅ No issues detected. Your environment looks healthy![/]",
+                "[zg.ok]No issues detected. Your environment looks healthy![/]",
                 border_style="#00d26a",
                 padding=(1, 2),
             )
@@ -186,13 +186,13 @@ def _render_report_summary(report: ResolutionReport) -> None:
     summary = report.summary
     parts = []
     if summary["critical"] > 0:
-        parts.append(f"[zg.critical]🔴 {summary['critical']} Critical[/]")
+        parts.append(f"[zg.critical]{summary['critical']} Critical[/]")
     if summary["errors"] > 0:
-        parts.append(f"[zg.error]❌ {summary['errors']} Errors[/]")
+        parts.append(f"[zg.error]{summary['errors']} Errors[/]")
     if summary["warnings"] > 0:
-        parts.append(f"[zg.warning]⚠️  {summary['warnings']} Warnings[/]")
+        parts.append(f"[zg.warning]{summary['warnings']} Warnings[/]")
     if summary["ok"] > 0:
-        parts.append(f"[zg.ok]✅ {summary['ok']} OK[/]")
+        parts.append(f"[zg.ok]{summary['ok']} OK[/]")
 
     summary_text = "   ".join(parts)
     console.print()
@@ -223,16 +223,16 @@ def render_project_manifest(manifest: ProjectManifest) -> None:
 
     # Engine constraints
     if manifest.engine_constraints:
-        engines_branch = tree.add("[zg.engine]⚙ Engine Constraints[/]")
+        engines_branch = tree.add("[zg.engine]Engine Constraints[/]")
         for engine, spec in manifest.engine_constraints.items():
             engines_branch.add(f"[zg.label]{engine}[/] [zg.version]{spec}[/]")
 
     # Dependencies by type
     dep_groups = {
-        DependencyType.PRODUCTION: ("📦 Production", "zg.ok"),
-        DependencyType.DEVELOPMENT: ("🔧 Development", "zg.info"),
-        DependencyType.PEER: ("🔗 Peer", "zg.warning"),
-        DependencyType.OPTIONAL: ("📎 Optional", "zg.dim"),
+        DependencyType.PRODUCTION: ("Production", "zg.ok"),
+        DependencyType.DEVELOPMENT: ("Development", "zg.info"),
+        DependencyType.PEER: ("Peer", "zg.warning"),
+        DependencyType.OPTIONAL: ("Optional", "zg.dim"),
     }
 
     for dep_type, (label, style) in dep_groups.items():
@@ -249,9 +249,9 @@ def render_project_manifest(manifest: ProjectManifest) -> None:
 
     # Lockfile status
     lock_status = (
-        "[zg.ok]✅ Lockfile present[/]"
+        "[zg.ok]Lockfile present[/]"
         if manifest.lockfile_present
-        else "[zg.warning]⚠️  No lockfile[/]"
+        else "[zg.warning]No lockfile[/]"
     )
     tree.add(lock_status)
 
@@ -273,7 +273,7 @@ def render_dedup_report(report: dict[str, Any]) -> None:
     if not groups:
         console.print(
             Panel(
-                "[zg.ok]✅ No duplicates found across scanned projects.[/]",
+                "[zg.ok]No duplicates found across scanned projects.[/]",
                 border_style="#00d26a",
                 padding=(1, 2),
             )
