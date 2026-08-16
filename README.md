@@ -1,4 +1,4 @@
-# ZeroGravity (zg)
+# ZeroGravity 
 
 <p align="center">
   <b>Bridge the gap between your project dependencies and your local operating system.</b>
