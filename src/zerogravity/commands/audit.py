@@ -24,16 +24,16 @@ def audit_command(
     Audit your system environment — show all detected binaries,
     version managers, and relevant environment variables.
     """
+    from zerogravity.resolver.models import SystemSnapshot
     from zerogravity.scanner.binary_scanner import run_scan_sync
     from zerogravity.scanner.env_scanner import (
-        scan_environment,
         get_platform_info,
+        scan_environment,
         scan_path_directories,
     )
     from zerogravity.scanner.version_manager import detect_all_managers_sync
-    from zerogravity.resolver.models import SystemSnapshot
-    from zerogravity.ui.renderers import render_system_snapshot
     from zerogravity.ui.console import print_section
+    from zerogravity.ui.renderers import render_system_snapshot
 
     print_banner()
 

@@ -11,7 +11,7 @@ import typer
 from rich.console import Console
 
 from zerogravity import __version__
-from zerogravity.commands import scan, audit, dedup, status, heal
+from zerogravity.commands import audit, dedup, heal, scan, status
 
 # ── App setup ───────────────────────────────────────────────────────────────
 app = typer.Typer(

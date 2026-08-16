@@ -61,22 +61,35 @@ async def probe_binary(name: str, command: List[str]) -> BinaryProbe:
         
         # java outputs version to stderr, handle differently? it will be in output
         if proc.returncode != 0 and name != "java":
-             return BinaryProbe(name=name, installed=True, path=path, version=None, error=None)
-             
+            detail = output or "no output"
+            return BinaryProbe(
+                name=name, installed=True, path=path, version=None,
+                error=f"'{' '.join(command)}' exited with code {proc.returncode}: {detail}",
+            )
+
         match = re.search(r'(\d+\.\d+\.\d+)', output)
         if match:
             version = match.group(1)
         else:
             version = None
-            
+
         return BinaryProbe(name=name, installed=True, path=path, version=version, error=None)
-        
+
     except asyncio.TimeoutError:
-        return BinaryProbe(name=name, installed=True, path=path, version=None, error=None)
-    except PermissionError:
-        return BinaryProbe(name=name, installed=True, path=path, version=None, error=None)
+        return BinaryProbe(
+            name=name, installed=True, path=path, version=None,
+            error=f"Timed out after 2s waiting for '{' '.join(command)}'",
+        )
+    except PermissionError as e:
+        return BinaryProbe(
+            name=name, installed=True, path=path, version=None,
+            error=f"Permission denied running '{' '.join(command)}': {e}",
+        )
     except Exception as e:
-        return BinaryProbe(name=name, installed=True, path=path, version=None, error=None)
+        return BinaryProbe(
+            name=name, installed=True, path=path, version=None,
+            error=f"Failed to probe '{' '.join(command)}': {e}",
+        )
 
 async def run_full_scan(binaries: Optional[List[str]] = None) -> Dict[str, BinaryProbe]:
     """Runs a full asynchronous scan of all or specified binaries."""

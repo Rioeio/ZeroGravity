@@ -13,9 +13,6 @@ from zerogravity.ui.console import (
     console,
     print_banner,
     print_section,
-    print_success,
-    print_warning,
-    print_error,
 )
 
 
@@ -23,15 +20,13 @@ def status_command() -> None:
     """
     Quick system health dashboard — binaries, dedup stats, and environment health.
     """
-    from zerogravity.scanner.binary_scanner import run_scan_sync
-    from zerogravity.scanner.env_scanner import get_platform_info
-    from zerogravity.resolver.models import SystemSnapshot
-    from zerogravity.ui.renderers import _format_bytes
-
-    from rich.table import Table
     from rich import box
     from rich.panel import Panel
-    from rich.columns import Columns
+    from rich.table import Table
+
+    from zerogravity.scanner.binary_scanner import run_scan_sync
+    from zerogravity.scanner.env_scanner import get_platform_info
+    from zerogravity.ui.renderers import _format_bytes
 
     print_banner()
     print_section("System Health Dashboard")

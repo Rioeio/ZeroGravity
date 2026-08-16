@@ -15,11 +15,10 @@ import typer
 from zerogravity.ui.console import (
     console,
     print_banner,
-    print_success,
     print_error,
-    print_warning,
     print_info,
-    print_section,
+    print_success,
+    print_warning,
 )
 
 
@@ -126,7 +125,7 @@ def dedup_optimize(
     if result.status == "success":
         from zerogravity.ui.renderers import _format_bytes
         print_success(f"Optimized: {dep_path}")
-        print_info(f"Hash: {result.hash[:16]}...")
+        print_info(f"Hash: {(result.hash or '')[:16]}...")
         print_info(f"Saved: {_format_bytes(result.bytes_saved)}")
         print_info(f"Store: {result.store_path}")
     elif result.status == "skipped":

@@ -7,13 +7,42 @@ runs conflict detection, and renders a comprehensive report.
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import Optional
 
 import typer
 
-from zerogravity.ui.console import console, print_banner, print_section, print_error, print_info
+from zerogravity.ui.console import console, print_banner, print_error, print_info, print_section
+
+EXCLUDED_DIR_NAMES = {
+    "node_modules", "dist", "build", "target", "out",
+    "__pycache__", "site-packages", ".git", ".hg", ".svn",
+    ".venv", "venv", "env", ".env", ".tox", ".mypy_cache",
+    ".pytest_cache", ".next", ".cache", ".nuxt",
+}
+
+
+def _iter_scan_dirs(root: Path):
+    """
+    Yield root and every subdirectory worth checking for a manifest,
+    pruning vendor/build/VCS directories instead of descending into them.
+    Skipping node_modules etc. up front (rather than filtering results
+    after the fact) keeps --recursive from treating every installed
+    package as its own "project".
+    """
+    yield root
+    stack = [root]
+    while stack:
+        current = stack.pop()
+        try:
+            children = [c for c in current.iterdir() if c.is_dir()]
+        except (PermissionError, OSError):
+            continue
+        for child in children:
+            if child.name in EXCLUDED_DIR_NAMES or child.name.startswith("."):
+                continue
+            yield child
+            stack.append(child)
 
 
 def scan_command(
@@ -55,15 +84,15 @@ def scan_command(
     and environment mismatches.
     """
     from zerogravity.parsers.registry import detect_and_parse
+    from zerogravity.resolver.conflict_detector import detect_conflicts
+    from zerogravity.resolver.models import SystemSnapshot
     from zerogravity.scanner.binary_scanner import run_scan_sync
     from zerogravity.scanner.env_scanner import get_platform_info
     from zerogravity.scanner.version_manager import detect_all_managers_sync
-    from zerogravity.resolver.models import SystemSnapshot
-    from zerogravity.resolver.conflict_detector import detect_conflicts
     from zerogravity.ui.renderers import (
-        render_system_snapshot,
         render_conflict_report,
         render_project_manifest,
+        render_system_snapshot,
     )
 
     project_paths = [Path(p).resolve() for p in paths] if paths else [Path.cwd()]
@@ -80,20 +109,15 @@ def scan_command(
     with console.status("[zg.accent]Parsing project manifests...[/]", spinner="dots"):
         for project_path in project_paths:
             if recursive:
-                for sub_path in project_path.rglob("*"):
-                    if sub_path.is_dir():
-                        sub_manifests = detect_and_parse(sub_path)
-                        if sub_manifests:
-                            manifests.extend(sub_manifests)
-                # also check the root itself
-                root_manifests = detect_and_parse(project_path)
-                if root_manifests:
-                    manifests.extend(root_manifests)
+                for sub_path in _iter_scan_dirs(project_path):
+                    sub_manifests = detect_and_parse(sub_path)
+                    if sub_manifests:
+                        manifests.extend(sub_manifests)
             else:
                 project_manifests = detect_and_parse(project_path)
                 if project_manifests:
                     manifests.extend(project_manifests)
-                    
+
         # Remove duplicates
         seen = set()
         unique_manifests = []
