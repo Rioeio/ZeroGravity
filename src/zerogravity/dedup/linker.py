@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import os
-import sys
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional
+
 
 @dataclass
 class LinkResult:
@@ -16,12 +17,12 @@ class LinkResult:
 
 class CrossPlatformLinker:
     """Handles cross-platform file and directory linking (symlinks, junctions, hardlinks)."""
-    
+
     def create_link(self, target: Path, link_path: Path) -> LinkResult:
         """Create a link from link_path to target."""
         target = target.absolute()
         link_path = link_path.absolute()
-        
+
         if sys.platform == "win32":
             try:
                 # Primary: Use Junction Points via cmd mklink /J
@@ -33,14 +34,14 @@ class CrossPlatformLinker:
                     return LinkResult("success", "junction")
             except Exception:
                 pass
-            
+
             # Fallback: Try os.symlink
             try:
                 os.symlink(target, link_path, target_is_directory=target.is_dir())
                 return LinkResult("fallback", "symlink")
             except Exception as e:
                 return LinkResult("error", "none", f"Failed to create link: {e}")
-                
+
         else:
             try:
                 os.symlink(target, link_path)
@@ -72,7 +73,7 @@ class CrossPlatformLinker:
         """Safely removes a symlink/junction without deleting the target."""
         if not self.is_link(path):
             return False
-            
+
         try:
             # First attempt to fix permissions if it's read-only
             if sys.platform == "win32":
@@ -81,7 +82,7 @@ class CrossPlatformLinker:
                     os.chmod(path, stat.S_IWRITE)
                 except Exception:
                     pass
-            
+
             if sys.platform == "win32" and path.is_dir():
                 os.rmdir(path)
             else:
@@ -94,11 +95,11 @@ class CrossPlatformLinker:
         """Checks if two paths are on the same filesystem/volume."""
         if not path_a.exists() and not path_a.parent.exists():
             return False
-            
+
         try:
             if sys.platform == "win32":
                 return path_a.absolute().drive.lower() == path_b.absolute().drive.lower()
-            
+
             stat_a = path_a.stat().st_dev if path_a.exists() else path_a.parent.stat().st_dev
             stat_b = path_b.stat().st_dev if path_b.exists() else path_b.parent.stat().st_dev
             return stat_a == stat_b
@@ -112,14 +113,14 @@ def detect_link_capabilities() -> Dict[str, bool]:
         "junctions_available": False,
         "hardlinks_available": False
     }
-    
+
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
         target_file = temp_path / "target.txt"
         target_file.write_text("test")
         target_dir = temp_path / "target_dir"
         target_dir.mkdir()
-        
+
         # Test hardlinks
         hardlink_path = temp_path / "hardlink.txt"
         try:
@@ -127,7 +128,7 @@ def detect_link_capabilities() -> Dict[str, bool]:
             capabilities["hardlinks_available"] = True
         except Exception:
             pass
-            
+
         # Test symlinks
         symlink_path = temp_path / "symlink.txt"
         try:
@@ -135,7 +136,7 @@ def detect_link_capabilities() -> Dict[str, bool]:
             capabilities["symlinks_available"] = True
         except Exception:
             pass
-            
+
         # Test junctions (Windows only)
         if sys.platform == "win32":
             junction_path = temp_path / "junction_dir"
@@ -147,5 +148,5 @@ def detect_link_capabilities() -> Dict[str, bool]:
                 capabilities["junctions_available"] = (result.returncode == 0)
             except Exception:
                 pass
-                
+
     return capabilities

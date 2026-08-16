@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import sqlite3
-from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
 
 class DeduplicationRegistry:
     """SQLite-backed registry for tracking deduplicated packages."""
@@ -13,9 +14,9 @@ class DeduplicationRegistry:
             self.db_path = Path.home() / ".zerogravity" / "registry.db"
         else:
             self.db_path = Path(db_path)
-            
+
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = None
+        self.conn: Optional[sqlite3.Connection] = None
         self._init_db()
 
     def _init_db(self) -> None:
@@ -44,8 +45,9 @@ class DeduplicationRegistry:
             conn.commit()
 
     def __enter__(self) -> DeduplicationRegistry:
-        self.conn = sqlite3.connect(self.db_path)
-        self.conn.row_factory = sqlite3.Row
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        self.conn = conn
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
@@ -72,8 +74,8 @@ class DeduplicationRegistry:
         try:
             with conn:
                 conn.execute(
-                    '''INSERT OR IGNORE INTO packages 
-                       (hash, store_path, size_bytes, file_count, created_at) 
+                    '''INSERT OR IGNORE INTO packages
+                       (hash, store_path, size_bytes, file_count, created_at)
                        VALUES (?, ?, ?, ?, ?)''',
                     (hash, store_path, size_bytes, file_count, datetime.utcnow().isoformat())
                 )
@@ -87,8 +89,8 @@ class DeduplicationRegistry:
         try:
             with conn:
                 conn.execute(
-                    '''INSERT INTO links 
-                       (hash, link_path, project_path, original_path, created_at) 
+                    '''INSERT INTO links
+                       (hash, link_path, project_path, original_path, created_at)
                        VALUES (?, ?, ?, ?, ?)''',
                     (hash, link_path, project_path, original_path, datetime.utcnow().isoformat())
                 )
@@ -161,25 +163,25 @@ class DeduplicationRegistry:
         try:
             with conn:
                 cursor = conn.execute('''
-                    SELECT 
+                    SELECT
                         COUNT(*) as total_packages,
                         SUM(size_bytes) as total_bytes_stored,
                         MAX(size_bytes) as largest_package_bytes
                     FROM packages
                 ''')
                 pkg_stats = dict(cursor.fetchone() or {})
-                
+
                 cursor = conn.execute('SELECT COUNT(*) as total_links FROM links')
                 link_stats = dict(cursor.fetchone() or {})
-                
+
                 total_packages = pkg_stats.get('total_packages') or 0
                 total_links = link_stats.get('total_links') or 0
                 total_bytes_stored = pkg_stats.get('total_bytes_stored') or 0
                 largest_package_bytes = pkg_stats.get('largest_package_bytes') or 0
-                
+
                 avg_size = (total_bytes_stored / total_packages) if total_packages > 0 else 0
                 estimated_bytes_saved = int((total_links - total_packages) * avg_size) if total_links > total_packages else 0
-                
+
                 return {
                     "total_packages": total_packages,
                     "total_links": total_links,

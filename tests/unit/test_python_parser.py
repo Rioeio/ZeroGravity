@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from zerogravity.parsers.python_parser import PythonParser
+
 from zerogravity.parsers.base import DependencyType
+from zerogravity.parsers.python_parser import PythonParser
 
 
 def test_can_parse_with_requirements(python_project_path: Path):

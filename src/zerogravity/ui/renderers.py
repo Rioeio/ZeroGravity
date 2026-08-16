@@ -7,27 +7,22 @@ conflict reports, manifest trees, and deduplication summaries.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from rich import box
 from rich.panel import Panel
 from rich.table import Table
-from rich.tree import Tree
 from rich.text import Text
-from rich.columns import Columns
+from rich.tree import Tree
 
-from zerogravity.ui.console import console, print_section
+from zerogravity.parsers.base import DependencyType, ProjectManifest
 from zerogravity.resolver.models import (
     BinaryProbe,
-    Issue,
     ResolutionReport,
-    Severity,
     SystemSnapshot,
     VersionManagerInfo,
 )
-from zerogravity.parsers.base import DependencyType, ProjectManifest
-
+from zerogravity.ui.console import console, print_section
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  System Snapshot Renderer
@@ -88,7 +83,7 @@ def _format_binary_status(probe: BinaryProbe) -> str:
     if not probe.installed:
         return "[zg.error]● NOT FOUND[/]"
     if probe.error:
-        return f"[zg.warning]● ERROR[/]"
+        return "[zg.warning]● ERROR[/]"
     return "[zg.ok]● INSTALLED[/]"
 
 

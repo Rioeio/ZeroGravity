@@ -1,13 +1,18 @@
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
-from zerogravity.resolver.models import (
-    Severity, IssueCategory, SystemSnapshot, BinaryProbe,
+
+from zerogravity.parsers.base import (
+    Dependency,
+    DependencyType,
+    Ecosystem,
+    ProjectManifest,
 )
 from zerogravity.resolver.conflict_detector import detect_conflicts
-from zerogravity.parsers.base import (
-    Dependency, DependencyType, Ecosystem, ProjectManifest,
+from zerogravity.resolver.models import (
+    IssueCategory,
+    Severity,
+    SystemSnapshot,
 )
 
 

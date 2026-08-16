@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Dict
+from typing import Dict, List
 
 from zerogravity.parsers.base import Dependency
 
@@ -17,7 +17,7 @@ SYSTEM_DEPENDENCY_MAP: Dict[str, List[str]] = {
     "bcrypt": ["gcc"],  # Python bcrypt
     "cffi": ["gcc", "libffi"],
     "pynacl": ["libsodium"],
-    
+
     # Node packages
     "node-gyp": ["python", "make", "gcc"],
     "canvas": ["pkg-config", "cairo"],
@@ -38,7 +38,7 @@ def lookup_system_deps(dependencies: List[Dependency]) -> List[SystemDepRequirem
     of required system binaries based on the lookup table.
     """
     requirements = []
-    
+
     for dep in dependencies:
         pkg_name = dep.name.lower()
         if pkg_name in SYSTEM_DEPENDENCY_MAP:
@@ -49,7 +49,7 @@ def lookup_system_deps(dependencies: List[Dependency]) -> List[SystemDepRequirem
                     required_binary=binary,
                     description=f"System binary '{binary}' is required by package '{dep.name}'"
                 ))
-                
+
     return requirements
 
 def get_all_known_packages() -> List[str]:

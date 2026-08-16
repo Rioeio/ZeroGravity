@@ -5,12 +5,13 @@ import platform
 from pathlib import Path
 from typing import Dict, List
 
+
 def scan_environment() -> Dict[str, str]:
     """Scans and returns relevant environment variables."""
     target_vars = [
-        "PATH", "PYTHONPATH", "NODE_PATH", "GOPATH", "GOROOT", 
-        "JAVA_HOME", "CARGO_HOME", "RUSTUP_HOME", "NVM_DIR", 
-        "PYENV_ROOT", "ASDF_DIR", "RBENV_ROOT", "VIRTUAL_ENV", 
+        "PATH", "PYTHONPATH", "NODE_PATH", "GOPATH", "GOROOT",
+        "JAVA_HOME", "CARGO_HOME", "RUSTUP_HOME", "NVM_DIR",
+        "PYENV_ROOT", "ASDF_DIR", "RBENV_ROOT", "VIRTUAL_ENV",
         "CONDA_PREFIX"
     ]
     result = {}
@@ -35,7 +36,7 @@ def scan_path_directories() -> List[str]:
     path_var = os.environ.get("PATH", "")
     separator = ";" if platform.system() == "Windows" else ":"
     dirs = path_var.split(separator)
-    
+
     valid_dirs = []
     for d in dirs:
         if not d:
@@ -43,5 +44,5 @@ def scan_path_directories() -> List[str]:
         p = Path(d)
         if p.exists() and p.is_dir():
             valid_dirs.append(str(p))
-            
+
     return valid_dirs

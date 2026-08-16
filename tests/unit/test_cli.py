@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import pytest
-from typer.testing import CliRunner
-from zerogravity.cli import app
 from pathlib import Path
+
+from typer.testing import CliRunner
+
+from zerogravity.cli import app
 
 runner = CliRunner()
 
@@ -129,6 +130,7 @@ def test_heal_command_executes_nvm_remediation(node_project_path: Path, tmp_path
     rather than silently no-op'ing like the shell=True/list-args bug did.
     """
     from unittest.mock import MagicMock, patch
+
     from zerogravity.resolver.models import VersionManagerInfo
 
     (tmp_path / "nvm.sh").write_text("# fake nvm.sh")

@@ -60,8 +60,8 @@ def audit_command(
     # ── Environment variables panel ──────────────────────────────────────
     if env_vars:
         print_section("Environment Variables")
-        from rich.table import Table
         from rich import box
+        from rich.table import Table
 
         env_table = Table(
             box=box.SIMPLE,

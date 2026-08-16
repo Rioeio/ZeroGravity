@@ -21,7 +21,6 @@ from zerogravity.ui.console import (
     print_warning,
 )
 
-
 dedup_app = typer.Typer(
     name="dedup",
     help="Smart dependency deduplication with virtualised symlinking.",

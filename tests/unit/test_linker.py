@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import os
-import sys
-import pytest
 from pathlib import Path
+
 from zerogravity.dedup.linker import CrossPlatformLinker
 
 

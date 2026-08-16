@@ -7,8 +7,8 @@ import typer
 from rich.panel import Panel
 from rich.table import Table
 
-from zerogravity.ui.console import console, print_banner, print_section, print_error, print_info
 from zerogravity.healing.engine import HealingEngine
+from zerogravity.ui.console import console, print_banner, print_error, print_info, print_section
 
 
 def heal_command(
@@ -27,11 +27,11 @@ def heal_command(
     Scan project and self-heal runtime environment mismatches.
     """
     from zerogravity.parsers.registry import detect_and_parse
+    from zerogravity.resolver.conflict_detector import detect_conflicts
+    from zerogravity.resolver.models import SystemSnapshot
     from zerogravity.scanner.binary_scanner import run_scan_sync
     from zerogravity.scanner.env_scanner import get_platform_info
     from zerogravity.scanner.version_manager import detect_all_managers_sync
-    from zerogravity.resolver.models import SystemSnapshot
-    from zerogravity.resolver.conflict_detector import detect_conflicts
     from zerogravity.ui.renderers import render_conflict_report
 
     project_path = Path(path).resolve() if path else Path.cwd()

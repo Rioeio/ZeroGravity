@@ -3,10 +3,11 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
-from typing import Dict, List, Optional
+from typing import Any, Dict
+
 from zerogravity.resolver.models import VersionManagerInfo
 
-VERSION_MANAGERS = {
+VERSION_MANAGERS: Dict[str, Dict[str, Any]] = {
     "nvm": {
         "env_var": "NVM_DIR",
         "binary": "nvm.exe" if os.name == "nt" else "nvm",
@@ -39,20 +40,20 @@ VERSION_MANAGERS = {
     }
 }
 
-async def detect_version_manager(name: str, detection_config: Dict) -> VersionManagerInfo:
+async def detect_version_manager(name: str, detection_config: Dict[str, Any]) -> VersionManagerInfo:
     """Detects a single version manager and queries its installed and active versions."""
     env_var = detection_config.get("env_var")
     binary_name = detection_config.get("binary")
     version_cmd = detection_config.get("version_cmd")
     list_cmd = detection_config.get("list_cmd")
-    
+
     root_path = os.environ.get(env_var) if env_var else None
     binary_path = shutil.which(binary_name) if binary_name else None
-    
+
     detected = bool(root_path or binary_path)
     active_version = None
     installed_versions = []
-    
+
     if detected:
         if version_cmd:
             try:
@@ -66,7 +67,7 @@ async def detect_version_manager(name: str, detection_config: Dict) -> VersionMa
                     active_version = stdout.decode("utf-8", errors="ignore").strip()
             except Exception:
                 pass
-                
+
         if list_cmd:
             try:
                 proc = await asyncio.create_subprocess_exec(
@@ -80,7 +81,7 @@ async def detect_version_manager(name: str, detection_config: Dict) -> VersionMa
                     installed_versions = [line.strip().strip("*").strip() for line in lines if line.strip()]
             except Exception:
                 pass
-                
+
     return VersionManagerInfo(
         name=name,
         detected=detected,
@@ -96,7 +97,7 @@ async def detect_all_managers() -> Dict[str, VersionManagerInfo]:
     for name, config in VERSION_MANAGERS.items():
         names.append(name)
         tasks.append(detect_version_manager(name, config))
-        
+
     results = await asyncio.gather(*tasks)
     return {name: result for name, result in zip(names, results)}
 

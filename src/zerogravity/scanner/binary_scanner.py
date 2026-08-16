@@ -5,8 +5,9 @@ import re
 import shutil
 import sys
 from typing import Dict, List, Optional
-from zerogravity.resolver.models import BinaryProbe
+
 from zerogravity.resolver.binary_lookup import get_all_required_system_binaries
+from zerogravity.resolver.models import BinaryProbe
 
 BINARY_MANIFEST = {
     "node": ["node", "--version"],
@@ -41,24 +42,24 @@ async def probe_binary(name: str, command: List[str]) -> BinaryProbe:
                 command = ["python", "--version"]
     else:
         path = shutil.which(name)
-        
+
     if not path:
         return BinaryProbe(name=name, installed=False, path=None, version=None, error=None)
-        
+
     try:
         proc = await asyncio.create_subprocess_exec(
             *command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        
+
         stdout_data, stderr_data = await asyncio.wait_for(proc.communicate(), timeout=2.0)
-        
+
         stdout_str = stdout_data.decode('utf-8', errors='ignore').strip()
         stderr_str = stderr_data.decode('utf-8', errors='ignore').strip()
-        
+
         output = stdout_str or stderr_str
-        
+
         # java outputs version to stderr, handle differently? it will be in output
         if proc.returncode != 0 and name != "java":
             detail = output or "no output"
@@ -95,14 +96,14 @@ async def run_full_scan(binaries: Optional[List[str]] = None) -> Dict[str, Binar
     """Runs a full asynchronous scan of all or specified binaries."""
     if binaries is None:
         binaries = list(BINARY_MANIFEST.keys())
-        
+
     tasks = []
     for binary in binaries:
         if binary in BINARY_MANIFEST:
             tasks.append(probe_binary(binary, BINARY_MANIFEST[binary]))
         else:
             tasks.append(probe_binary(binary, [binary, "--version"]))
-            
+
     results = await asyncio.gather(*tasks)
     return {probe.name: probe for probe in results}
 

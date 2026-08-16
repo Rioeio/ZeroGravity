@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import re
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
+
 from zerogravity.scanner.binary_scanner import probe_binary, run_full_scan
-from zerogravity.resolver.models import BinaryProbe
 
 
 @pytest.mark.asyncio

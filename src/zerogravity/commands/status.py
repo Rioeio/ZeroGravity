@@ -7,8 +7,6 @@ and last scan info.
 
 from __future__ import annotations
 
-import typer
-
 from zerogravity.ui.console import (
     console,
     print_banner,
