@@ -179,4 +179,4 @@ mypy
 
 ## License
 
-Distributed under the [MIT License](LICENSE). Copyright (c) 2026 ZeroGravity Team.
+Distributed under the [MIT License](LICENSE)
