@@ -255,6 +255,11 @@ def render_project_manifest(manifest: ProjectManifest) -> None:
     )
     tree.add(lock_status)
 
+    # Container / devcontainer status
+    if manifest.has_container:
+        container_label = manifest.container_file.name if manifest.container_file else "Container"
+        tree.add(f"[zg.accent]🐳 Container: {container_label}[/] [zg.dim](system deps container-resolved)[/]")
+
     console.print(tree)
 
 
@@ -334,6 +339,145 @@ def render_dedup_status(status: dict[str, Any]) -> None:
     )
 
     console.print(table)
+
+
+def render_outdated_report(report: Any) -> None:
+    """Render full outdated dependency table."""
+    print_section("Outdated Dependencies")
+
+    if not report.packages:
+        console.print("[zg.ok]  All dependencies are up to date.[/]")
+        return
+
+    table = Table(
+        title="[zg.accent]Outdated Packages[/]",
+        box=box.ROUNDED,
+        header_style="bold #b388ff",
+        border_style="#455a64",
+        padding=(0, 1),
+    )
+    table.add_column("Package", style="zg.package", min_width=16)
+    table.add_column("Current", style="zg.dim", min_width=12)
+    table.add_column("Latest", style="zg.version", min_width=12)
+    table.add_column("Type", justify="center", min_width=10)
+    table.add_column("Ecosystem", style="zg.label", min_width=10)
+    table.add_column("Project", style="zg.dim", max_width=30, overflow="ellipsis")
+
+    for pkg in sorted(report.packages, key=lambda p: (p.update_type.name, p.name)):
+        type_style = pkg.update_type.color
+        type_badge = f"[{type_style}]{pkg.update_type.value.upper()}[/]"
+        table.add_row(
+            pkg.name,
+            pkg.current_version,
+            pkg.latest_version,
+            type_badge,
+            pkg.ecosystem.value,
+            pkg.project_name,
+        )
+
+    console.print(table)
+    render_outdated_summary(report)
+
+
+def render_outdated_summary(report: Any) -> None:
+    """Render quick outdated summary metrics panel."""
+    summary_parts = []
+    if report.major_count:
+        summary_parts.append(f"[bold red]{report.major_count} major[/]")
+    if report.minor_count:
+        summary_parts.append(f"[yellow]{report.minor_count} minor[/]")
+    if report.patch_count:
+        summary_parts.append(f"[cyan]{report.patch_count} patch[/]")
+
+    if summary_parts:
+        summary_text = (
+            f"[zg.accent]Outdated Dependencies:[/] {', '.join(summary_parts)} behind "
+            f"(across [zg.version]{report.scanned_dependencies}[/] scanned packages)"
+        )
+    else:
+        summary_text = f"[zg.ok]All {report.scanned_dependencies} scanned dependencies are up to date.[/]"
+
+    console.print(
+        Panel(
+            summary_text,
+            border_style="#455a64",
+            padding=(0, 1),
+        )
+    )
+
+
+def render_security_report(report: Any) -> None:
+    """Render full vulnerability advisory table."""
+    print_section("Security Vulnerability Audit")
+
+    if not report.advisories:
+        console.print("[zg.ok]  No known vulnerabilities detected across scanned packages.[/]")
+        return
+
+    table = Table(
+        title="[zg.error]Detected Vulnerabilities[/]",
+        box=box.ROUNDED,
+        header_style="bold #b388ff",
+        border_style="#ef5350",
+        padding=(0, 1),
+    )
+    table.add_column("Severity", justify="center", min_width=10)
+    table.add_column("Advisory / CVE", style="zg.accent", min_width=16)
+    table.add_column("Package", style="zg.package", min_width=14)
+    table.add_column("Installed", style="zg.version", min_width=10)
+    table.add_column("Summary", style="zg.dim", max_width=45, overflow="ellipsis")
+    table.add_column("Project", style="zg.dim", max_width=25, overflow="ellipsis")
+
+    sorted_advisories = sorted(
+        report.advisories,
+        key=lambda a: (-a.severity.priority, a.package_name),
+    )
+
+    for adv in sorted_advisories:
+        badge = f"[{adv.severity.color}]{adv.severity.value}[/]"
+        id_display = adv.cve_id or adv.id
+        table.add_row(
+            badge,
+            id_display,
+            adv.package_name,
+            adv.installed_version,
+            adv.summary,
+            adv.project_name,
+        )
+
+    console.print(table)
+    render_security_summary(report)
+
+
+def render_security_summary(report: Any) -> None:
+    """Render security metrics summary panel."""
+    parts = []
+    if report.critical_count:
+        parts.append(f"[bold white on red]{report.critical_count} CRITICAL[/]")
+    if report.high_count:
+        parts.append(f"[bold red]{report.high_count} HIGH[/]")
+    if report.medium_count:
+        parts.append(f"[yellow]{report.medium_count} MEDIUM[/]")
+    if report.low_count:
+        parts.append(f"[cyan]{report.low_count} LOW[/]")
+
+    if parts:
+        text = (
+            f"[zg.accent]Security Advisories:[/] {', '.join(parts)} vulnerabilities detected "
+            f"(across [zg.version]{report.scanned_packages}[/] scanned packages)"
+        )
+        border = "#ef5350"
+    else:
+        text = f"[zg.ok]No known vulnerabilities found in {report.scanned_packages} scanned packages.[/]"
+        border = "#455a64"
+
+    console.print(
+        Panel(
+            text,
+            border_style=border,
+            padding=(0, 1),
+        )
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════

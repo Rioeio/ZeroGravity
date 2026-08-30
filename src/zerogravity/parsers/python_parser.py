@@ -13,6 +13,121 @@ from zerogravity.parsers.base import (
 )
 
 
+def _extract_python_workspace_info(path: Path, data: dict) -> tuple[list[Path], set[str]]:
+    """Extract workspace member paths and package names from pyproject.toml."""
+    member_paths: set[Path] = set()
+    member_names: set[str] = set()
+
+    # 1. tool.uv.workspace members
+    if "tool" in data and isinstance(data["tool"], dict):
+        uv_cfg = data["tool"].get("uv", {})
+        if isinstance(uv_cfg, dict) and "workspace" in uv_cfg:
+            ws = uv_cfg["workspace"]
+            members = ws.get("members", []) if isinstance(ws, dict) else []
+            for pat in members:
+                clean_pat = pat.lstrip("./").strip("/")
+                try:
+                    for p in path.glob(clean_pat):
+                        if p.is_dir() and ((p / "pyproject.toml").is_file() or (p / "setup.py").is_file()):
+                            if p.resolve() != path.resolve():
+                                member_paths.add(p.resolve())
+                except Exception:
+                    pass
+
+    # Helper for path dependency inspection
+    resolved_root = path.resolve()
+
+    def _check_dep_string(dep_str: str) -> None:
+        if "@" in dep_str:
+            parts = dep_str.split("@", 1)
+            pkg_name = parts[0].strip()
+            loc = parts[1].strip()
+            if loc.startswith("file:") or loc.startswith(".") or "/" in loc or "\\" in loc:
+                clean_loc = loc.removeprefix("file://").removeprefix("file:").strip()
+                try:
+                    target_path = (path / clean_loc).resolve()
+                    if (
+                        target_path.is_dir()
+                        and ((target_path / "pyproject.toml").is_file() or (target_path / "setup.py").is_file())
+                        and target_path != resolved_root
+                        and target_path.is_relative_to(resolved_root)
+                    ):
+                        member_paths.add(target_path)
+                        member_names.add(pkg_name)
+                except Exception:
+                    pass
+
+    # 2. PEP 621 dependencies & optional-dependencies
+    if "project" in data and isinstance(data["project"], dict):
+        for req in data["project"].get("dependencies", []):
+            if isinstance(req, str):
+                _check_dep_string(req)
+        for reqs in data["project"].get("optional-dependencies", {}).values():
+            if isinstance(reqs, list):
+                for req in reqs:
+                    if isinstance(req, str):
+                        _check_dep_string(req)
+
+    # 3. Poetry dependencies
+    if "tool" in data and isinstance(data["tool"], dict) and "poetry" in data["tool"]:
+        poetry_deps = data["tool"]["poetry"].get("dependencies", {})
+        if isinstance(poetry_deps, dict):
+            for name, spec in poetry_deps.items():
+                if isinstance(spec, dict) and "path" in spec:
+                    try:
+                        target_path = (path / spec["path"]).resolve()
+                        if (
+                            target_path.is_dir()
+                            and ((target_path / "pyproject.toml").is_file() or (target_path / "setup.py").is_file())
+                            and target_path != resolved_root
+                            and target_path.is_relative_to(resolved_root)
+                        ):
+                            member_paths.add(target_path)
+                            member_names.add(name)
+                    except Exception:
+                        pass
+
+    return sorted(list(member_paths)), member_names
+
+
+def _find_python_workspace_root(path: Path) -> tuple[Path, list[Path]] | None:
+    """Find ancestor directory that defines a workspace containing this path."""
+    current = path.resolve().parent
+    while current != current.parent:
+        pyproject = current / "pyproject.toml"
+        if pyproject.is_file():
+            try:
+                with open(pyproject, "rb") as f:
+                    data = tomllib.load(f)
+                members, _ = _extract_python_workspace_info(current, data)
+                if path.resolve() in members:
+                    return current, members
+            except Exception:
+                pass
+        if (current / ".git").is_dir():
+            break
+        current = current.parent
+    return None
+
+
+def _get_python_member_names(member_paths: list[Path]) -> set[str]:
+    """Read package names from member pyproject.toml files."""
+    names: set[str] = set()
+    for mp in member_paths:
+        pyp = mp / "pyproject.toml"
+        if pyp.is_file():
+            try:
+                with open(pyp, "rb") as f:
+                    data = tomllib.load(f)
+                if "project" in data and "name" in data["project"]:
+                    names.add(data["project"]["name"])
+                elif "tool" in data and "poetry" in data["tool"] and "name" in data["tool"]["poetry"]:
+                    names.add(data["tool"]["poetry"]["name"])
+            except Exception:
+                pass
+    return names
+
+
 class PythonParser(BaseParser):
     """
     Parser for Python projects (requirements.txt, pyproject.toml, Pipfile).
@@ -36,6 +151,27 @@ class PythonParser(BaseParser):
             marker = marker.strip()
 
         req_str = req_str.strip()
+
+        # Handle direct reference URL/path dependencies (e.g. pkg @ file:../pkg or pkg @ ./pkg)
+        if " @ " in req_str:
+            name, loc = req_str.split(" @ ", 1)
+            name = name.strip()
+            loc = loc.strip()
+            is_internal = loc.startswith("file:") or loc.startswith(".") or "/" in loc or "\\" in loc
+            meta: dict = {"path": loc} if is_internal else {}
+            if marker:
+                meta["marker"] = marker
+            if is_internal:
+                meta["workspace_internal"] = True
+            return Dependency(
+                name=name,
+                version_spec=loc,
+                resolved_version=None,
+                dep_type=dep_type,
+                extras=[],
+                source=source,
+                metadata=meta,
+            )
 
         # Handle VCS
         if req_str.startswith("git+") or req_str.startswith("hg+") or req_str.startswith("svn+") or req_str.startswith("bzr+"):
@@ -115,21 +251,22 @@ class PythonParser(BaseParser):
 
         return deps, metadata
 
-    def _parse_pyproject_toml(self, path: Path) -> tuple[str | None, dict[str, str], list[Dependency], bool]:
+    def _parse_pyproject_toml(self, path: Path) -> tuple[str | None, dict[str, str], list[Dependency], bool, dict]:
         """Parse pyproject.toml."""
         project_name: str | None = None
         engine_constraints: dict[str, str] = {}
         deps: list[Dependency] = []
         poetry_lock = False
+        raw_data: dict = {}
 
         try:
             with open(path, "rb") as f:
-                data = tomllib.load(f)
+                raw_data = tomllib.load(f)
         except (tomllib.TOMLDecodeError, OSError):
-            return project_name, engine_constraints, deps, poetry_lock
+            return project_name, engine_constraints, deps, poetry_lock, raw_data
 
-        if "project" in data:
-            project_data = data["project"]
+        if "project" in raw_data:
+            project_data = raw_data["project"]
             project_name = project_data.get("name")
 
             if "requires-python" in project_data:
@@ -145,8 +282,8 @@ class PythonParser(BaseParser):
                     dep.metadata["optional_group"] = group
                     deps.append(dep)
 
-        elif "tool" in data and "poetry" in data["tool"]:
-            poetry_data = data["tool"]["poetry"]
+        elif "tool" in raw_data and "poetry" in raw_data["tool"]:
+            poetry_data = raw_data["tool"]["poetry"]
             project_name = poetry_data.get("name")
 
             poetry_deps = poetry_data.get("dependencies", {})
@@ -155,7 +292,14 @@ class PythonParser(BaseParser):
                     engine_constraints["python"] = spec if isinstance(spec, str) else spec.get("version", "*")
                     continue
 
-                version_spec = spec if isinstance(spec, str) else spec.get("version", "*")
+                dep_meta: dict = {}
+                if isinstance(spec, dict) and "path" in spec:
+                    version_spec = spec.get("version") or spec["path"]
+                    dep_meta["path"] = spec["path"]
+                    dep_meta["workspace_internal"] = True
+                else:
+                    version_spec = spec if isinstance(spec, str) else spec.get("version", "*")
+
                 deps.append(Dependency(
                     name=name,
                     version_spec=version_spec,
@@ -163,16 +307,17 @@ class PythonParser(BaseParser):
                     dep_type=DependencyType.PRODUCTION,
                     extras=[],
                     source=path.name,
-                    metadata={}
+                    metadata=dep_meta,
                 ))
 
         if (path.parent / "poetry.lock").is_file():
             poetry_lock = True
 
-        return project_name, engine_constraints, deps, poetry_lock
+        return project_name, engine_constraints, deps, poetry_lock, raw_data
 
     def parse(self, path: Path) -> ProjectManifest:
         """Parse python manifest files."""
+        path = path.resolve()
         req_path = path / "requirements.txt"
         toml_path = path / "pyproject.toml"
         pipfile_path = path / "Pipfile"
@@ -185,6 +330,7 @@ class PythonParser(BaseParser):
 
         lockfile_present = False
         lockfile_path = None
+        raw_toml_data: dict = {}
 
         if req_path.is_file():
             manifest_files.append(str(req_path))
@@ -195,7 +341,7 @@ class PythonParser(BaseParser):
 
         if toml_path.is_file():
             manifest_files.append(str(toml_path))
-            toml_name, toml_engines, toml_deps, has_poetry_lock = self._parse_pyproject_toml(toml_path)
+            toml_name, toml_engines, toml_deps, has_poetry_lock, raw_toml_data = self._parse_pyproject_toml(toml_path)
 
             if toml_name:
                 project_name = toml_name
@@ -215,6 +361,46 @@ class PythonParser(BaseParser):
                 lockfile_present = True
                 lockfile_path = str(path / "Pipfile.lock")
                 manifest_files.append(lockfile_path)
+
+        # Workspace detection
+        is_workspace_root = False
+        is_workspace_member = False
+        workspace_root: Path | None = None
+        workspace_members: list[Path] = []
+        workspace_member_names: set[str] = set()
+
+        if raw_toml_data:
+            members, names = _extract_python_workspace_info(path, raw_toml_data)
+            if members:
+                is_workspace_root = True
+                workspace_root = path
+                workspace_members = members
+                workspace_member_names = names | _get_python_member_names(members)
+
+        if not is_workspace_root:
+            ancestor_info = _find_python_workspace_root(path)
+            if ancestor_info:
+                is_workspace_member = True
+                workspace_root, workspace_members = ancestor_info
+                workspace_member_names = _get_python_member_names(workspace_members)
+            else:
+                # Check if any dependency is a sibling path dependency (e.g. path starts with ../)
+                has_sibling_path_dep = any(
+                    isinstance(d.metadata.get("path"), str) and d.metadata["path"].startswith("..")
+                    for d in dependencies
+                )
+                if has_sibling_path_dep:
+                    is_workspace_member = True
+                    workspace_root = path.parent
+
+        # Mark workspace-internal dependencies
+        for dep in dependencies:
+            if (
+                dep.name in workspace_member_names
+                or dep.metadata.get("workspace_internal")
+                or (isinstance(dep.metadata.get("path"), str) and dep.metadata["path"].startswith("."))
+            ):
+                dep.metadata["workspace_internal"] = True
 
         if lockfile_present and lockfile_path:
             direct_dep_names = {dep.name.lower() for dep in dependencies}
@@ -274,5 +460,9 @@ class PythonParser(BaseParser):
             lockfile_present=lockfile_present,
             lockfile_path=Path(lockfile_path) if lockfile_path else None,
             manifest_files=[Path(m) for m in manifest_files],
-            metadata=metadata
+            metadata=metadata,
+            workspace_root=workspace_root,
+            workspace_members=workspace_members,
+            is_workspace_root=is_workspace_root,
+            is_workspace_member=is_workspace_member,
         )

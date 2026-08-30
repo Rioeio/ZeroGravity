@@ -7,11 +7,13 @@ runs conflict detection, and renders a comprehensive report.
 
 from __future__ import annotations
 
+import fnmatch
 from pathlib import Path
 from typing import Optional
 
 import typer
 
+from zerogravity.config import load_config
 from zerogravity.ui.console import console, print_banner, print_error, print_info, print_section
 
 EXCLUDED_DIR_NAMES = {
@@ -22,14 +24,13 @@ EXCLUDED_DIR_NAMES = {
 }
 
 
-def _iter_scan_dirs(root: Path):
+def _iter_scan_dirs(root: Path, extra_excludes: list[str] | None = None):
     """
     Yield root and every subdirectory worth checking for a manifest,
-    pruning vendor/build/VCS directories instead of descending into them.
-    Skipping node_modules etc. up front (rather than filtering results
-    after the fact) keeps --recursive from treating every installed
-    package as its own "project".
+    pruning vendor/build/VCS directories and user-configured exclusions
+    instead of descending into them.
     """
+    custom_excludes = set(extra_excludes or [])
     yield root
     stack = [root]
     while stack:
@@ -40,6 +41,11 @@ def _iter_scan_dirs(root: Path):
             continue
         for child in children:
             if child.name in EXCLUDED_DIR_NAMES or child.name.startswith("."):
+                continue
+            if child.name in custom_excludes:
+                continue
+            rel_str = child.relative_to(root).as_posix()
+            if any(fnmatch.fnmatch(rel_str, pat) or fnmatch.fnmatch(child.name, pat) for pat in custom_excludes):
                 continue
             yield child
             stack.append(child)
@@ -54,7 +60,7 @@ def scan_command(
         "table",
         "--format",
         "-f",
-        help="Output format: table (default) or json.",
+        help="Output format: table (default), json, sarif, or junit.",
     ),
     verbose: bool = typer.Option(
         False,
@@ -78,20 +84,41 @@ def scan_command(
         "-r",
         help="Search for all subdirectories containing manifest files.",
     ),
+    no_cache: bool = typer.Option(
+        False,
+        "--no-cache",
+        help="Bypass scan-result cache and force full re-parsing.",
+    ),
+    offline: bool = typer.Option(
+        False,
+        "--offline",
+        help="Run in offline mode without querying online package registries.",
+    ),
+    check_host_anyway: bool = typer.Option(
+        False,
+        "--check-host-anyway",
+        help="Check host system binaries even for containerized/devcontainer projects.",
+    ),
 ) -> None:
     """
     Scan project directories for dependency conflicts, missing binaries,
     and environment mismatches.
     """
+    from zerogravity.formatters.junit import format_junit
+    from zerogravity.formatters.sarif import format_sarif
+    from zerogravity.outdated.checker import check_outdated_dependencies
     from zerogravity.parsers.registry import detect_and_parse
     from zerogravity.resolver.conflict_detector import detect_conflicts
     from zerogravity.resolver.models import SystemSnapshot
     from zerogravity.scanner.binary_scanner import run_scan_sync
     from zerogravity.scanner.env_scanner import get_platform_info
     from zerogravity.scanner.version_manager import detect_all_managers_sync
+    from zerogravity.security.scanner import scan_vulnerabilities
     from zerogravity.ui.renderers import (
         render_conflict_report,
+        render_outdated_summary,
         render_project_manifest,
+        render_security_summary,
         render_system_snapshot,
     )
 
@@ -102,19 +129,24 @@ def scan_command(
             print_error(f"Not a directory: {project_path}")
             raise typer.Exit(code=1)
 
-    print_banner()
+    if output_format == "table":
+        print_banner()
+
+    # Load configuration
+    config = load_config(project_paths[0] if project_paths else None)
 
     # ── Step 1: Parse project manifests ──────────────────────────────────
     manifests = []
     with console.status("[zg.accent]Parsing project manifests...[/]", spinner="dots"):
         for project_path in project_paths:
+            proj_config = load_config(project_path) if len(project_paths) > 1 else config
             if recursive:
-                for sub_path in _iter_scan_dirs(project_path):
-                    sub_manifests = detect_and_parse(sub_path)
+                for sub_path in _iter_scan_dirs(project_path, extra_excludes=proj_config.exclude):
+                    sub_manifests = detect_and_parse(sub_path, use_cache=not no_cache)
                     if sub_manifests:
                         manifests.extend(sub_manifests)
             else:
-                project_manifests = detect_and_parse(project_path)
+                project_manifests = detect_and_parse(project_path, use_cache=not no_cache)
                 if project_manifests:
                     manifests.extend(project_manifests)
 
@@ -128,10 +160,11 @@ def scan_command(
         manifests = unique_manifests
 
     if not manifests:
-        paths_str = ", ".join(str(p) for p in project_paths)
-        print_info(f"No supported manifest files found in {paths_str}")
-        print_info("Supported: package.json, requirements.txt, pyproject.toml")
-    else:
+        if output_format == "table":
+            paths_str = ", ".join(str(p) for p in project_paths)
+            print_info(f"No supported manifest files found in {paths_str}")
+            print_info("Supported: package.json, requirements.txt, pyproject.toml")
+    elif output_format == "table":
         print_section("Project Manifests")
         for manifest in manifests:
             render_project_manifest(manifest)
@@ -148,16 +181,39 @@ def scan_command(
         version_managers=version_managers,
     )
 
-    if verbose:
+    if verbose and output_format == "table":
         render_system_snapshot(snapshot)
 
     # ── Step 3: Run conflict detection ───────────────────────────────────
     with console.status("[zg.accent]Analyzing conflicts...[/]", spinner="dots"):
-        report = detect_conflicts(manifests, snapshot, include_history=not no_history)
+        report = detect_conflicts(
+            manifests,
+            snapshot,
+            include_history=not no_history,
+            config=config,
+            check_host_anyway=check_host_anyway,
+        )
 
-    render_conflict_report(report)
+    if output_format == "table":
+        render_conflict_report(report)
 
-    # ── Step 4: JSON output mode ─────────────────────────────────────────
+    # ── Step 4: Check outdated dependencies ──────────────────────────────
+    outdated_report = None
+    if manifests:
+        with console.status("[zg.accent]Checking package registries for updates...[/]", spinner="dots"):
+            outdated_report = check_outdated_dependencies(manifests, offline=offline)
+        if output_format == "table":
+            render_outdated_summary(outdated_report)
+
+    # ── Step 5: Check security vulnerabilities ───────────────────────────
+    security_report = None
+    if manifests:
+        with console.status("[zg.accent]Querying OSV.dev vulnerability database...[/]", spinner="dots"):
+            security_report = scan_vulnerabilities(manifests, offline=offline)
+        if output_format == "table":
+            render_security_summary(security_report)
+
+    # ── Step 6: Output formatting ────────────────────────────────────────
     if output_format == "json":
         import json
         result = {
@@ -182,10 +238,17 @@ def scan_command(
                 for i in report.issues
             ],
             "summary": report.summary,
+            "outdated": outdated_report.summary if outdated_report else {},
+            "vulnerabilities": security_report.summary if security_report else {},
         }
         console.print_json(json.dumps(result))
+    elif output_format == "sarif":
+        sarif_doc = format_sarif(report, security_report=security_report, manifests=manifests)
+        console.print_json(sarif_doc)
+    elif output_format == "junit":
+        junit_doc = format_junit(report, security_report=security_report, manifests=manifests)
+        console.print(junit_doc, soft_wrap=True, highlight=False)
 
     if heal:
         from zerogravity.commands.heal import heal_command
-        # If multiple paths, we just heal the first one or we'd need to change heal command
         heal_command(path=str(project_paths[0]) if project_paths else None, auto_approve=False)

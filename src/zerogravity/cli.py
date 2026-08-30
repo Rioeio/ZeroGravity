@@ -11,7 +11,18 @@ import typer
 from rich.console import Console
 
 from zerogravity import __version__
-from zerogravity.commands import audit, dedup, heal, scan, status
+from zerogravity.commands import (
+    audit,
+    dedup,
+    doctor,
+    heal,
+    init,
+    outdated,
+    scan,
+    security,
+    status,
+    why,
+)
 
 # ── App setup ───────────────────────────────────────────────────────────────
 app = typer.Typer(
@@ -33,6 +44,11 @@ app.command(name="audit", help="[bold cyan]Audit[/] your OS environment — bina
 app.add_typer(dedup.dedup_app, name="dedup", help="[bold cyan]Deduplicate[/] dependency folders across projects.")
 app.command(name="status", help="[bold cyan]Status[/] dashboard — system health at a glance.")(status.status_command)
 app.command(name="heal", help="[bold cyan]Self-heal[/] runtime environment mismatches.")(heal.heal_command)
+app.command(name="init", help="[bold cyan]Initialize[/] .zerogravity.toml configuration file.")(init.init_command)
+app.command(name="outdated", help="[bold cyan]Check[/] package registries for available dependency updates.")(outdated.outdated_command)
+app.command(name="audit-security", help="[bold cyan]Audit[/] dependencies for known CVEs and security advisories.")(security.security_command)
+app.command(name="why", help="[bold cyan]Trace[/] one dependency's resolution, lockfile, versions, and system binary requirements.")(why.why_command)
+app.command(name="doctor", help="[bold cyan]Diagnose[/] your project — audit, scan, and offer to heal in one guided flow.")(doctor.doctor_command)
 
 
 # ── Version callback ────────────────────────────────────────────────────────

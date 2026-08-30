@@ -23,6 +23,26 @@ def python_project_path(fixtures_path: Path) -> Path:
 
 
 @pytest.fixture
+def rust_project_path(fixtures_path: Path) -> Path:
+    return fixtures_path / "rust_project"
+
+
+@pytest.fixture
+def go_project_path(fixtures_path: Path) -> Path:
+    return fixtures_path / "go_project"
+
+
+@pytest.fixture
+def node_workspace_path(fixtures_path: Path) -> Path:
+    return fixtures_path / "node_workspace"
+
+
+@pytest.fixture
+def python_workspace_path(fixtures_path: Path) -> Path:
+    return fixtures_path / "python_workspace"
+
+
+@pytest.fixture
 def tmp_project_dir(tmp_path: Path) -> Path:
     pkg = tmp_path / "package.json"
     pkg.write_text('{"name": "tmp-project"}')

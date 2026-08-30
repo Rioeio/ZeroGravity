@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+import fnmatch
 import json
 import re
 from pathlib import Path
@@ -72,6 +71,101 @@ def _parse_pnpm_package_key(key: str) -> tuple[str, str] | None:
     return name, version
 
 
+def _extract_node_workspace_patterns(package_json_data: dict, path: Path) -> list[str]:
+    """Extract workspace glob patterns from package.json and/or pnpm-workspace.yaml."""
+    patterns: list[str] = []
+    if "workspaces" in package_json_data:
+        ws = package_json_data["workspaces"]
+        if isinstance(ws, list):
+            patterns.extend(ws)
+        elif isinstance(ws, dict) and "packages" in ws and isinstance(ws["packages"], list):
+            patterns.extend(ws["packages"])
+
+    pnpm_ws = path / "pnpm-workspace.yaml"
+    if pnpm_ws.is_file():
+        try:
+            with open(pnpm_ws, "r", encoding="utf-8") as f:
+                pdata = yaml.safe_load(f) or {}
+                if isinstance(pdata, dict) and "packages" in pdata and isinstance(pdata["packages"], list):
+                    patterns.extend(pdata["packages"])
+        except Exception:
+            pass
+
+    return patterns
+
+
+def _resolve_node_workspace_members(root_path: Path, patterns: list[str]) -> list[Path]:
+    """Expand workspace glob patterns to find member directories."""
+    inclusion_patterns = [p for p in patterns if not p.startswith("!")]
+    exclusion_patterns = [p[1:] for p in patterns if p.startswith("!")]
+
+    members: set[Path] = set()
+    for pat in inclusion_patterns:
+        clean_pat = pat.lstrip("./").strip("/")
+        if not clean_pat:
+            continue
+        try:
+            for p in root_path.glob(clean_pat):
+                if p.is_dir() and (p / "package.json").is_file() and p.resolve() != root_path.resolve():
+                    rel = p.relative_to(root_path).as_posix()
+                    excluded = False
+                    for expat in exclusion_patterns:
+                        clean_expat = expat.lstrip("./").strip("/")
+                        if fnmatch.fnmatch(rel, clean_expat) or fnmatch.fnmatch(p.name, clean_expat):
+                            excluded = True
+                            break
+                    if not excluded:
+                        members.add(p.resolve())
+        except Exception:
+            pass
+
+    return sorted(list(members))
+
+
+def _find_node_workspace_root(path: Path) -> tuple[Path, list[Path]] | None:
+    """Find ancestor directory that defines a workspace containing this path."""
+    current = path.resolve().parent
+    while current != current.parent:
+        pkg_json = current / "package.json"
+        pnpm_ws = current / "pnpm-workspace.yaml"
+        if pkg_json.is_file() or pnpm_ws.is_file():
+            patterns: list[str] = []
+            if pkg_json.is_file():
+                try:
+                    with open(pkg_json, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    patterns.extend(_extract_node_workspace_patterns(data, current))
+                except Exception:
+                    pass
+            if pnpm_ws.is_file() and not patterns:
+                patterns.extend(_extract_node_workspace_patterns({}, current))
+
+            if patterns:
+                members = _resolve_node_workspace_members(current, patterns)
+                if path.resolve() in members:
+                    return current, members
+        if (current / ".git").is_dir():
+            break
+        current = current.parent
+    return None
+
+
+def _get_workspace_member_names(member_paths: list[Path]) -> set[str]:
+    """Read package names for workspace members."""
+    names: set[str] = set()
+    for mp in member_paths:
+        pkg_file = mp / "package.json"
+        if pkg_file.is_file():
+            try:
+                with open(pkg_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if "name" in data and isinstance(data["name"], str):
+                    names.add(data["name"])
+            except Exception:
+                pass
+    return names
+
+
 class NodeParser(BaseParser):
     """
     Parser for Node.js projects (package.json and lockfiles).
@@ -84,23 +178,26 @@ class NodeParser(BaseParser):
 
     def can_parse(self, path: Path) -> bool:
         """
-        Check if package.json exists in the directory.
+        Check if package.json or pnpm-workspace.yaml exists in the directory.
         """
-        return (path / "package.json").is_file()
+        return (path / "package.json").is_file() or (path / "pnpm-workspace.yaml").is_file()
 
     def parse(self, path: Path) -> ProjectManifest:
         """
         Parse package.json and associated lockfiles.
         """
+        path = path.resolve()
         package_json_path = path / "package.json"
+        data: dict = {}
 
-        try:
-            with open(package_json_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Malformed JSON in {package_json_path}: {e}")
-        except OSError as e:
-            raise IOError(f"Could not read {package_json_path}: {e}")
+        if package_json_path.is_file():
+            try:
+                with open(package_json_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Malformed JSON in {package_json_path}: {e}")
+            except OSError as e:
+                raise IOError(f"Could not read {package_json_path}: {e}")
 
         project_name = data.get("name", path.name)
         dependencies: list[Dependency] = []
@@ -129,11 +226,42 @@ class NodeParser(BaseParser):
                     )
 
         engine_constraints = data.get("engines", {})
-        metadata = {}
-        if "workspaces" in data:
-            metadata["workspaces"] = data["workspaces"]
+        metadata: dict = {}
 
-        manifest_files = [str(package_json_path)]
+        # Workspace detection
+        workspace_patterns = _extract_node_workspace_patterns(data, path)
+        is_workspace_root = False
+        is_workspace_member = False
+        workspace_root: Path | None = None
+        workspace_members: list[Path] = []
+        workspace_member_names: set[str] = set()
+
+        if workspace_patterns:
+            is_workspace_root = True
+            workspace_root = path
+            workspace_members = _resolve_node_workspace_members(path, workspace_patterns)
+            metadata["workspaces"] = workspace_patterns
+            workspace_member_names = _get_workspace_member_names(workspace_members)
+        else:
+            ancestor_info = _find_node_workspace_root(path)
+            if ancestor_info:
+                is_workspace_member = True
+                workspace_root, workspace_members = ancestor_info
+                workspace_member_names = _get_workspace_member_names(workspace_members)
+
+        # Flag workspace-internal dependencies
+        for dep in dependencies:
+            if (
+                dep.name in workspace_member_names
+                or dep.version_spec.startswith("workspace:")
+                or dep.version_spec.startswith("file:")
+            ):
+                dep.metadata["workspace_internal"] = True
+
+        manifest_files = [str(package_json_path)] if package_json_path.is_file() else []
+        pnpm_ws_path = path / "pnpm-workspace.yaml"
+        if pnpm_ws_path.is_file():
+            manifest_files.append(str(pnpm_ws_path))
 
         # Detect lockfiles
         lockfile_present = False
@@ -221,5 +349,9 @@ class NodeParser(BaseParser):
             lockfile_present=lockfile_present,
             lockfile_path=Path(lockfile_path) if lockfile_path else None,
             manifest_files=[Path(m) for m in manifest_files],
-            metadata=metadata
+            metadata=metadata,
+            workspace_root=workspace_root,
+            workspace_members=workspace_members,
+            is_workspace_root=is_workspace_root,
+            is_workspace_member=is_workspace_member,
         )
