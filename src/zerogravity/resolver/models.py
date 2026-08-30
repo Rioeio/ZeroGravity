@@ -64,6 +64,7 @@ class IssueCategory(enum.Enum):
     LOCKFILE_MISSING = "lockfile_missing"
     ENGINE_CONSTRAINT_VIOLATION = "engine_constraint_violation"
     DEPRECATED_VERSION = "deprecated_version"
+    CONTAINER_RESOLVED = "container_resolved"
 
 
 @dataclass

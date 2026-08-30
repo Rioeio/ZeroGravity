@@ -91,6 +91,31 @@ class ProjectManifest:
     lockfile_path: Path | None = None
     manifest_files: list[Path] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    workspace_root: Path | None = None
+    workspace_members: list[Path] = field(default_factory=list)
+    is_workspace_root: bool = False
+    is_workspace_member: bool = False
+    container_file: Path | None = None
+
+    @property
+    def has_container(self) -> bool:
+        """Return True if project has a Dockerfile or devcontainer configuration."""
+        return self.container_file is not None
+
+    @property
+    def is_containerized(self) -> bool:
+        """Alias for has_container."""
+        return self.has_container
+
+    @property
+    def logical_project_path(self) -> Path:
+        """Return the workspace root if part of a workspace, otherwise project_path."""
+        return self.workspace_root if self.workspace_root is not None else self.project_path
+
+    @property
+    def logical_project_id(self) -> str:
+        """Return a string identifier for the logical project."""
+        return str(self.logical_project_path)
 
     @property
     def production_deps(self) -> list[Dependency]:
@@ -163,3 +188,30 @@ class BaseParser(ABC):
             ValueError: If manifest files contain malformed data.
         """
         ...
+
+
+def detect_container_config(path: Path) -> Path | None:
+    """
+    Detect if a project directory or workspace root contains Docker or devcontainer config files.
+    """
+    candidates = [
+        path / "Dockerfile",
+        path / "Containerfile",
+        path / ".devcontainer" / "devcontainer.json",
+        path / ".devcontainer.json",
+        path / ".devcontainer" / "Dockerfile",
+        path / "docker-compose.yml",
+        path / "docker-compose.yaml",
+        path / "compose.yaml",
+    ]
+    for c in candidates:
+        if c.is_file():
+            return c
+    if path.is_dir():
+        try:
+            for child in path.iterdir():
+                if child.is_file() and child.name.startswith("Dockerfile."):
+                    return child
+        except (PermissionError, OSError):
+            pass
+    return None
