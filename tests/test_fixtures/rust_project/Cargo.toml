@@ -1,0 +1,16 @@
+[package]
+name = "rust_project"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75.0"
+
+[dependencies]
+serde = { version = "1.0.197", features = ["derive"] }
+tokio = { version = "1.36.0", features = ["full"] }
+flate2 = { version = "1.0.28", optional = true }
+
+[dev-dependencies]
+tempfile = "3.10.1"
+
+[build-dependencies]
+cc = "1.0.83"
