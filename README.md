@@ -48,7 +48,7 @@ Most developer tools operate in silos: package managers read `package.json` or `
 Traditional package managers assume system libraries are pre-installed. ZeroGravity parses both direct and transitive dependencies from lockfiles and cross-references them against required C libraries and system tools (e.g., `cryptography` -> `openssl`, `psycopg2` -> `pg_config`, `canvas` -> `pkg-config`/`cairo`, `sharp` -> `vips`).
 
 ### 2. Cross-Project Conflict Radar & Scan History
-When working on multiple repositories, runtime requirements often clash (e.g., Project A requiring Node 18 while Project B requires Node 20). `zg scan` maintains a persistent local history ledger (`~/.zerogravity/scan_history.json`) to detect cross-project version conflicts across workspace directories over time.
+When working on multiple repositories, runtime requirements often clash (e.g., Project A requiring Node 18 while Project B requiring Node 20). `zg scan` maintains a persistent local history ledger (`~/.zerogravity/scan_history.json`) to detect cross-project version conflicts across workspace directories over time.
 
 ### 3. Automated Environment Self-Healing (`zg heal`)
 ZeroGravity doesn't just surface issues — it resolves them. `zg heal` detects installed version managers (`nvm`, `pyenv`, `rustup`), resolves version range specifiers into clean releases, and executes non-destructive remediation commands (e.g., `nvm install 18 && nvm use 18`, `pyenv install -s 3.11.4 && pyenv local 3.11.4`).
@@ -57,6 +57,8 @@ ZeroGravity doesn't just surface issues — it resolves them. `zg heal` detects 
 Performs deep lockfile inspection for:
 - **Node.js**: `package-lock.json` (v1/v2/v3), `yarn.lock` (v1 & Berry multi-selectors), `pnpm-lock.yaml` (pnpm 6–11 key schemas).
 - **Python**: `requirements.txt`, `pyproject.toml`, `poetry.lock`, `Pipfile.lock`.
+- **Rust**: `Cargo.toml`, `Cargo.lock`.
+- **Go**: `go.mod`, `go.sum`.
 
 ### 5. Virtualized Symlinking & Smart Deduplication
 Scans projects for duplicate dependency folders (`node_modules`, `.venv`, `vendor`), computes deterministic SHA-256 content hashes, moves packages into a global store (`~/.zerogravity/store`), and creates Windows Junction Points (`mklink /J`) or POSIX symlinks.
@@ -149,6 +151,103 @@ Display the system health dashboard at a glance.
 zg status
 ```
 
+### `zg doctor [PATH]`
+Run a full guided diagnostic — audit, scan, and offer to heal — all in one narrative flow.
+
+```bash
+# Interactive diagnostic of the current directory
+zg doctor
+
+# Unattended diagnostic with auto-healing
+zg doctor ~/projects/myapp --auto-approve
+```
+
+### `zg why <package> [PATH]`
+Trace one dependency's full resolution — direct or transitive, which lockfile resolved it,
+its declared vs. resolved version, and any system binaries it requires.
+
+```bash
+# Trace a direct dependency
+zg why express
+
+# Trace a transitive dependency in a specific project
+zg why serde_derive ~/projects/my-rust-app
+
+# JSON output for scripting
+zg why lodash --format json
+```
+
+### `zg outdated [PATHS...]`
+Check package registries for available dependency updates.
+
+```bash
+zg outdated
+zg outdated --format json
+```
+
+### `zg audit-security [PATHS...]`
+Audit dependencies for known CVEs and security advisories via OSV.dev.
+
+```bash
+zg audit-security ~/projects/myapp
+```
+
+### `zg init`
+Generate a `.zerogravity.toml` configuration file with sensible defaults.
+
+```bash
+zg init
+```
+
+---
+
+## Shell Completion
+
+ZeroGravity supports tab-completion for all commands, options, and arguments
+in **Bash**, **Zsh**, **Fish**, and **PowerShell** via Typer's built-in
+completion support.
+
+### Install completion for your current shell
+
+```bash
+# Auto-detect the current shell and install completion
+zg --install-completion
+```
+
+This writes a completion script to your shell's config file (e.g.
+`~/.bashrc`, `~/.zshrc`, `~/.config/fish/completions/`, or the PowerShell
+profile) and sources it. **Restart your shell** (or source the config) for
+the changes to take effect.
+
+### Preview the completion script without installing
+
+```bash
+# Print the completion script to stdout (useful for customization)
+zg --show-completion
+```
+
+### Manual installation (advanced)
+
+If you prefer to manage completion scripts yourself:
+
+```bash
+# Bash — append to ~/.bashrc
+zg --show-completion bash >> ~/.bashrc
+
+# Zsh — append to ~/.zshrc
+zg --show-completion zsh >> ~/.zshrc
+
+# Fish — write to completions dir
+zg --show-completion fish > ~/.config/fish/completions/zg.fish
+
+# PowerShell — append to profile
+zg --show-completion powershell >> $PROFILE
+```
+
+After installation, typing `zg <TAB>` will auto-complete subcommands
+(`scan`, `audit`, `heal`, `doctor`, `why`, `dedup`, …), and `zg scan --<TAB>`
+will complete available options.
+
 ---
 
 ## Ecosystem Matrix
@@ -157,6 +256,8 @@ zg status
 | :--- | :--- | :--- | :--- |
 | **Node.js** | `package.json` | `package-lock.json`<br>`yarn.lock`<br>`pnpm-lock.yaml` | `python`, `make`, `gcc`, `pkg-config`, `cairo`, `vips` |
 | **Python** | `requirements.txt`<br>`pyproject.toml`<br>`Pipfile` | `poetry.lock`<br>`Pipfile.lock` | `openssl`, `pg_config`, `mysql_config`, `libxml2`, `libxslt`, `libsodium`, `libffi`, `gcc` |
+| **Rust** | `Cargo.toml` | `Cargo.lock` | `rustc`, `cargo` |
+| **Go** | `go.mod` | `go.sum` | `go` |
 
 ---
 
@@ -165,7 +266,7 @@ zg status
 ZeroGravity is built with high standards of type safety and test coverage:
 
 ```bash
-# Run unit & integration test suite (96 tests)
+# Run unit & integration test suite
 pytest tests/
 
 # Run Ruff linter
@@ -179,4 +280,4 @@ mypy
 
 ## License
 
-Distributed under the [MIT License](LICENSE)
+Distributed under the [MIT License](LICENSE). Copyright (c) 2026 ZeroGravity Team.
