@@ -1,0 +1,12 @@
+github.com/davecgh/go-spew v1.1.1 h1:vj94CcU1NuFUYuwZNgc4VQpNQMV7h8489CgTUQ8en5U=
+github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+github.com/gin-gonic/gin v1.9.1 h1:4+fr/Skz1zAaoqNJSQUoeGZLW022Gdf7BSuW3lG81fA=
+github.com/gin-gonic/gin v1.9.1/go.mod h1:h2LSm3AAR7O88/T8/F1y1TshdY6f8p4e19/L6T2+r4A=
+github.com/google/uuid v1.6.0 h1:NIvaJDujyhU8Y1jUknaBtMmky073b97ZkHYPJF+/14o=
+github.com/google/uuid v1.6.0/go.mod h1:TIym5CLqqW6q2pnZPx53xAEptZflVfqwkxOw93uQyho=
+github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
+github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4SrdQVUU=
+github.com/stretchr/testify v1.8.4 h1:CcTest84f7n/xLzYcOcr8P6w5iB+Qp16f6L8yX7i8yA=
+github.com/stretchr/testify v1.8.4/go.mod h1:m2GzpTcMmEccL3+/MrPzI12Mv++NEx2W61wfPRcv1P8=
+golang.org/x/crypto v0.18.0 h1:RZyJazA8p78QeUbpw11jF5c4m1A/eXlWkS7wPzNq8xM=
+golang.org/x/crypto v0.18.0/go.mod h1:U9h5vJb7f0g2X7p/h5vWvM8iU7xWkS8+L0k4a8u21Y8=
