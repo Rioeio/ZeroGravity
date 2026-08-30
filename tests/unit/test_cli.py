@@ -13,7 +13,7 @@ def test_cli_version():
     """Test --version flag."""
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert "ZeroGravity v0.2.0" in result.stdout
+    assert "ZeroGravity v0.3.0" in result.stdout
 
 
 def test_cli_help():

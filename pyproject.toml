@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "zerogravity"
-version = "0.2.0"
+version = "0.3.0"
 description = "Bridge the gap between project dependencies and your local OS. Deep binary mapping, cross-project conflict detection, smart deduplication, and automated environment self-healing."
 readme = "README.md"
 license = "MIT"

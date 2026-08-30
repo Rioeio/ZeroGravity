@@ -87,6 +87,42 @@ def test_sarif_formatter_structure_and_schema():
     assert sec_res["level"] == "error"
     assert "CVE-2020-8203" in sec_res["message"]["text"]
 
+    # Official jsonschema validation if jsonschema is installed
+    try:
+        import jsonschema
+        # Minimal SARIF 2.1.0 JSON schema draft check
+        schema = {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "required": ["$schema", "version", "runs"],
+            "properties": {
+                "version": {"type": "string", "enum": ["2.1.0"]},
+                "runs": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["tool", "results"],
+                        "properties": {
+                            "tool": {
+                                "type": "object",
+                                "required": ["driver"],
+                                "properties": {
+                                    "driver": {
+                                        "type": "object",
+                                        "required": ["name", "rules"],
+                                    }
+                                },
+                            },
+                            "results": {"type": "array"},
+                        },
+                    },
+                },
+            },
+        }
+        jsonschema.validate(instance=doc, schema=schema)
+    except ImportError:
+        pass
+
 
 def test_junit_formatter_structure_and_xml_parsing():
     """Verify JUnit XML output is well-formed XML and contains testsuites/testcases."""
