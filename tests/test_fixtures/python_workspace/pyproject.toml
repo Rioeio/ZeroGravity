@@ -1,0 +1,11 @@
+[project]
+name = "python-monorepo"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "pkg-a @ file:packages/pkg-a",
+    "pkg-b @ file:packages/pkg-b",
+]
+
+[tool.uv.workspace]
+members = ["packages/*"]

@@ -39,6 +39,65 @@ class DuplicateReport:
     total_waste_bytes: int
     total_directories: int
 
+def _get_logical_project_root(path: Path) -> Path:
+    """Determine the logical project / workspace root for a given path."""
+    current = path.resolve()
+    if current.is_file():
+        current = current.parent
+
+    # Climb up to find any workspace root or project manifest
+    scan_cursor = current
+    while scan_cursor != scan_cursor.parent:
+        pkg_json = scan_cursor / "package.json"
+        pnpm_ws = scan_cursor / "pnpm-workspace.yaml"
+        pyproject = scan_cursor / "pyproject.toml"
+
+        if pnpm_ws.is_file():
+            return scan_cursor
+
+        if pkg_json.is_file():
+            try:
+                import json
+                with open(pkg_json, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if "workspaces" in data:
+                    return scan_cursor
+            except Exception:
+                pass
+
+        if pyproject.is_file():
+            try:
+                import tomllib
+                with open(pyproject, "rb") as f:
+                    data = tomllib.load(f)
+                if "tool" in data and isinstance(data["tool"], dict):
+                    uv_ws = data["tool"].get("uv", {})
+                    if isinstance(uv_ws, dict) and "workspace" in uv_ws:
+                        return scan_cursor
+            except Exception:
+                pass
+
+        if (scan_cursor / ".git").is_dir():
+            break
+        scan_cursor = scan_cursor.parent
+
+    # Fallback to nearest directory containing any manifest
+    scan_cursor = current
+    while scan_cursor != scan_cursor.parent:
+        if (
+            (scan_cursor / "package.json").is_file()
+            or (scan_cursor / "pyproject.toml").is_file()
+            or (scan_cursor / "requirements.txt").is_file()
+            or (scan_cursor / "Pipfile").is_file()
+        ):
+            return scan_cursor
+        if (scan_cursor / ".git").is_dir():
+            break
+        scan_cursor = scan_cursor.parent
+
+    return current
+
+
 class DeduplicationEngine:
     """The main deduplication engine for ZeroGravity."""
 
@@ -211,10 +270,14 @@ class DeduplicationEngine:
 
         for h, paths in hash_to_paths.items():
             if len(paths) > 1:
-                size = hash_to_size[h]
-                savings = size * (len(paths) - 1)
-                total_waste_bytes += savings
-                groups.append(DuplicateGroup(h, paths, size, savings))
+                # Sibling workspace packages belong to one logical project;
+                # only flag duplicate candidate groups spanning multiple distinct projects
+                logical_projects = {_get_logical_project_root(p) for p in paths}
+                if len(logical_projects) > 1:
+                    size = hash_to_size[h]
+                    savings = size * (len(paths) - 1)
+                    total_waste_bytes += savings
+                    groups.append(DuplicateGroup(h, paths, size, savings))
 
         # Sort groups by potential savings
         groups.sort(key=lambda g: g.potential_savings, reverse=True)
