@@ -6,7 +6,10 @@ import shutil
 import sys
 from typing import Dict, List, Optional
 
-from zerogravity.resolver.binary_lookup import get_all_required_system_binaries
+from zerogravity.resolver.binary_lookup import (
+    get_all_required_system_binaries,
+    get_library_metadata,
+)
 from zerogravity.resolver.models import BinaryProbe
 
 BINARY_MANIFEST = {
@@ -21,6 +24,7 @@ BINARY_MANIFEST = {
     "gcc": ["gcc", "--version"],
     "make": ["make", "--version"],
     "go": ["go", "version"],
+    "rust": ["rustc", "--version"],
     "rustc": ["rustc", "--version"],
     "cargo": ["cargo", "--version"],
     "ruby": ["ruby", "--version"],
@@ -40,10 +44,19 @@ async def probe_binary(name: str, command: List[str]) -> BinaryProbe:
             path = shutil.which("python")
             if path:
                 command = ["python", "--version"]
+    elif name == "rust":
+        path = shutil.which("rustc") or shutil.which("rust")
+        if path:
+            command = ["rustc", "--version"]
     else:
         path = shutil.which(name)
 
     if not path:
+        # Fallback: try library detection for shared libraries
+        metadata = get_library_metadata(name)
+        if metadata and metadata.get("type") == "library":
+            from zerogravity.scanner.lib_detector import detect_library
+            return detect_library(name, metadata)
         return BinaryProbe(name=name, installed=False, path=None, version=None, error=None)
 
     try:

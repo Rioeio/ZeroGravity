@@ -78,3 +78,27 @@ async def test_run_full_scan():
             assert "node" in results
             assert "python" in results
             assert results["node"].installed is True
+
+
+@pytest.mark.asyncio
+async def test_probe_binary_library_fallback():
+    """When shutil.which fails for a known library, probe_binary delegates to lib_detector."""
+    from zerogravity.resolver.models import BinaryProbe
+
+    lib_probe = BinaryProbe(name="libjpeg", installed=True, path="pkg-config:libjpeg", version="2.1.0")
+
+    with patch("zerogravity.scanner.binary_scanner.shutil.which", return_value=None), \
+         patch("zerogravity.scanner.binary_scanner.get_library_metadata", return_value={
+             "type": "library",
+             "pkg_config": "libjpeg",
+             "apt": "libjpeg-dev",
+             "rpm": "libjpeg-turbo-devel",
+             "brew": "jpeg",
+         }), \
+         patch("zerogravity.scanner.lib_detector.detect_library", return_value=lib_probe):
+        result = await probe_binary("libjpeg", ["libjpeg", "--version"])
+
+    assert result.installed is True
+    assert result.name == "libjpeg"
+    assert result.version == "2.1.0"
+    assert result.path == "pkg-config:libjpeg"

@@ -1,0 +1,370 @@
+{
+  "version": 1,
+  "packages": {
+    "cryptography": ["openssl"],
+    "psycopg2": ["pg_config"],
+    "psycopg2-binary": [],
+    "pillow": ["libjpeg", "zlib", "libpng", "libtiff", "libwebp"],
+    "lxml": ["libxml2", "libxslt"],
+    "mysqlclient": ["mysql_config"],
+    "bcrypt": ["gcc"],
+    "cffi": ["gcc", "libffi"],
+    "pynacl": ["libsodium"],
+    "numpy": ["gcc", "gfortran"],
+    "scipy": ["gcc", "gfortran", "liblapack", "libblas"],
+    "pandas": ["gcc"],
+    "h5py": ["libhdf5", "gcc"],
+    "pyaudio": ["portaudio"],
+    "pygraphviz": ["graphviz"],
+    "pycairo": ["cairo", "pkg-config"],
+    "pygobject": ["cairo", "gobject-introspection", "pkg-config"],
+    "opencv-python": ["libopencv", "gcc"],
+    "opencv-contrib-python": ["libopencv", "gcc"],
+    "grpcio": ["gcc"],
+    "pyzmq": ["libzmq"],
+    "confluent-kafka": ["librdkafka"],
+    "sasl": ["libsasl2"],
+    "python-ldap": ["libldap", "libsasl2"],
+    "greenlet": ["gcc"],
+    "uvloop": ["libuv"],
+    "argon2-cffi-bindings": ["gcc", "libffi"],
+    "zstandard": ["libzstd"],
+    "brotli": ["gcc"],
+    "brotlicffi": ["gcc", "libffi"],
+    "maturin": ["rustc", "cargo"],
+    "pyo3": ["rustc", "cargo"],
+    "tokenizers": ["rustc", "cargo"],
+    "orjson": ["rustc", "cargo"],
+
+    "node-gyp": ["python", "make", "gcc"],
+    "canvas": ["pkg-config", "cairo", "libjpeg", "libpng"],
+    "sharp": ["vips"],
+    "sqlite3": ["python", "make", "gcc"],
+    "node-sass": ["python", "make", "gcc"],
+    "bcrypt-node": ["python", "make", "gcc"],
+    "re2": ["libre2", "gcc"],
+    "libxmljs": ["libxml2", "gcc"],
+    "node-rdkafka": ["librdkafka", "gcc"],
+    "zeromq": ["libzmq"],
+    "sodium-native": ["libsodium"],
+    "libpq": ["pg_config"],
+    "better-sqlite3": ["python", "make", "gcc"],
+    "cpu-features": ["gcc"],
+    "deasync": ["python", "make", "gcc"],
+
+    "openssl-sys": ["openssl", "pkg-config"],
+    "libgit2-sys": ["libgit2", "pkg-config"],
+    "libz-sys": ["zlib", "pkg-config"],
+    "libssh2-sys": ["libssh2", "pkg-config"],
+    "curl-sys": ["libcurl", "pkg-config"],
+    "pq-sys": ["pg_config"],
+    "rdkafka-sys": ["librdkafka", "pkg-config"],
+    "zmq-sys": ["libzmq", "pkg-config"],
+    "bzip2-sys": ["libbz2"],
+    "zstd-sys": ["libzstd"],
+    "onig-sys": ["libonig"],
+    "sqlite3-sys": ["libsqlite3"],
+    "rocksdb-sys": ["librocksdb", "gcc"],
+
+    "github.com/mattn/go-sqlite3": ["libsqlite3", "gcc"],
+    "github.com/confluentinc/confluent-kafka-go": ["librdkafka"],
+    "github.com/pebbe/zmq4": ["libzmq"],
+    "github.com/go-git/go-git/v5": ["libgit2"]
+  },
+  "library_metadata": {
+    "openssl": {
+      "type": "binary",
+      "pkg_config": "openssl",
+      "apt": "libssl-dev",
+      "rpm": "openssl-devel",
+      "brew": "openssl"
+    },
+    "pg_config": {
+      "type": "binary",
+      "pkg_config": "libpq",
+      "apt": "libpq-dev",
+      "rpm": "postgresql-devel",
+      "brew": "libpq"
+    },
+    "mysql_config": {
+      "type": "binary",
+      "pkg_config": "mysqlclient",
+      "apt": "libmysqlclient-dev",
+      "rpm": "mysql-devel",
+      "brew": "mysql"
+    },
+    "libjpeg": {
+      "type": "library",
+      "pkg_config": "libjpeg",
+      "apt": "libjpeg-dev",
+      "rpm": "libjpeg-turbo-devel",
+      "brew": "jpeg"
+    },
+    "zlib": {
+      "type": "library",
+      "pkg_config": "zlib",
+      "apt": "zlib1g-dev",
+      "rpm": "zlib-devel",
+      "brew": "zlib"
+    },
+    "libpng": {
+      "type": "library",
+      "pkg_config": "libpng",
+      "apt": "libpng-dev",
+      "rpm": "libpng-devel",
+      "brew": "libpng"
+    },
+    "libtiff": {
+      "type": "library",
+      "pkg_config": "libtiff-4",
+      "apt": "libtiff-dev",
+      "rpm": "libtiff-devel",
+      "brew": "libtiff"
+    },
+    "libwebp": {
+      "type": "library",
+      "pkg_config": "libwebp",
+      "apt": "libwebp-dev",
+      "rpm": "libwebp-devel",
+      "brew": "webp"
+    },
+    "libxml2": {
+      "type": "library",
+      "pkg_config": "libxml-2.0",
+      "apt": "libxml2-dev",
+      "rpm": "libxml2-devel",
+      "brew": "libxml2"
+    },
+    "libxslt": {
+      "type": "library",
+      "pkg_config": "libxslt",
+      "apt": "libxslt1-dev",
+      "rpm": "libxslt-devel",
+      "brew": "libxslt"
+    },
+    "libffi": {
+      "type": "library",
+      "pkg_config": "libffi",
+      "apt": "libffi-dev",
+      "rpm": "libffi-devel",
+      "brew": "libffi"
+    },
+    "libsodium": {
+      "type": "library",
+      "pkg_config": "libsodium",
+      "apt": "libsodium-dev",
+      "rpm": "libsodium-devel",
+      "brew": "libsodium"
+    },
+    "cairo": {
+      "type": "library",
+      "pkg_config": "cairo",
+      "apt": "libcairo2-dev",
+      "rpm": "cairo-devel",
+      "brew": "cairo"
+    },
+    "vips": {
+      "type": "library",
+      "pkg_config": "vips",
+      "apt": "libvips-dev",
+      "rpm": "vips-devel",
+      "brew": "vips"
+    },
+    "graphviz": {
+      "type": "binary",
+      "pkg_config": "libgvc",
+      "apt": "graphviz",
+      "rpm": "graphviz",
+      "brew": "graphviz"
+    },
+    "gobject-introspection": {
+      "type": "library",
+      "pkg_config": "gobject-introspection-1.0",
+      "apt": "libgirepository1.0-dev",
+      "rpm": "gobject-introspection-devel",
+      "brew": "gobject-introspection"
+    },
+    "portaudio": {
+      "type": "library",
+      "pkg_config": "portaudio-2.0",
+      "apt": "portaudio19-dev",
+      "rpm": "portaudio-devel",
+      "brew": "portaudio"
+    },
+    "libhdf5": {
+      "type": "library",
+      "pkg_config": "hdf5",
+      "apt": "libhdf5-dev",
+      "rpm": "hdf5-devel",
+      "brew": "hdf5"
+    },
+    "gfortran": {
+      "type": "binary",
+      "pkg_config": null,
+      "apt": "gfortran",
+      "rpm": "gcc-gfortran",
+      "brew": "gcc"
+    },
+    "liblapack": {
+      "type": "library",
+      "pkg_config": "lapack",
+      "apt": "liblapack-dev",
+      "rpm": "lapack-devel",
+      "brew": "lapack"
+    },
+    "libblas": {
+      "type": "library",
+      "pkg_config": "blas",
+      "apt": "libblas-dev",
+      "rpm": "blas-devel",
+      "brew": "openblas"
+    },
+    "libopencv": {
+      "type": "library",
+      "pkg_config": "opencv4",
+      "apt": "libopencv-dev",
+      "rpm": "opencv-devel",
+      "brew": "opencv"
+    },
+    "libzmq": {
+      "type": "library",
+      "pkg_config": "libzmq",
+      "apt": "libzmq3-dev",
+      "rpm": "zeromq-devel",
+      "brew": "zeromq"
+    },
+    "librdkafka": {
+      "type": "library",
+      "pkg_config": "rdkafka",
+      "apt": "librdkafka-dev",
+      "rpm": "librdkafka-devel",
+      "brew": "librdkafka"
+    },
+    "libsasl2": {
+      "type": "library",
+      "pkg_config": null,
+      "apt": "libsasl2-dev",
+      "rpm": "cyrus-sasl-devel",
+      "brew": "cyrus-sasl"
+    },
+    "libldap": {
+      "type": "library",
+      "pkg_config": null,
+      "apt": "libldap2-dev",
+      "rpm": "openldap-devel",
+      "brew": "openldap"
+    },
+    "libuv": {
+      "type": "library",
+      "pkg_config": "libuv",
+      "apt": "libuv1-dev",
+      "rpm": "libuv-devel",
+      "brew": "libuv"
+    },
+    "libzstd": {
+      "type": "library",
+      "pkg_config": "libzstd",
+      "apt": "libzstd-dev",
+      "rpm": "libzstd-devel",
+      "brew": "zstd"
+    },
+    "libre2": {
+      "type": "library",
+      "pkg_config": "re2",
+      "apt": "libre2-dev",
+      "rpm": "re2-devel",
+      "brew": "re2"
+    },
+    "libgit2": {
+      "type": "library",
+      "pkg_config": "libgit2",
+      "apt": "libgit2-dev",
+      "rpm": "libgit2-devel",
+      "brew": "libgit2"
+    },
+    "libssh2": {
+      "type": "library",
+      "pkg_config": "libssh2",
+      "apt": "libssh2-1-dev",
+      "rpm": "libssh2-devel",
+      "brew": "libssh2"
+    },
+    "libcurl": {
+      "type": "library",
+      "pkg_config": "libcurl",
+      "apt": "libcurl4-openssl-dev",
+      "rpm": "libcurl-devel",
+      "brew": "curl"
+    },
+    "libbz2": {
+      "type": "library",
+      "pkg_config": null,
+      "apt": "libbz2-dev",
+      "rpm": "bzip2-devel",
+      "brew": "bzip2"
+    },
+    "libonig": {
+      "type": "library",
+      "pkg_config": "oniguruma",
+      "apt": "libonig-dev",
+      "rpm": "oniguruma-devel",
+      "brew": "oniguruma"
+    },
+    "libsqlite3": {
+      "type": "library",
+      "pkg_config": "sqlite3",
+      "apt": "libsqlite3-dev",
+      "rpm": "sqlite-devel",
+      "brew": "sqlite"
+    },
+    "librocksdb": {
+      "type": "library",
+      "pkg_config": null,
+      "apt": "librocksdb-dev",
+      "rpm": "rocksdb-devel",
+      "brew": "rocksdb"
+    },
+    "gcc": {
+      "type": "binary",
+      "pkg_config": null,
+      "apt": "gcc",
+      "rpm": "gcc",
+      "brew": "gcc"
+    },
+    "make": {
+      "type": "binary",
+      "pkg_config": null,
+      "apt": "make",
+      "rpm": "make",
+      "brew": "make"
+    },
+    "python": {
+      "type": "binary",
+      "pkg_config": null,
+      "apt": "python3",
+      "rpm": "python3",
+      "brew": "python"
+    },
+    "pkg-config": {
+      "type": "binary",
+      "pkg_config": null,
+      "apt": "pkg-config",
+      "rpm": "pkgconf-pkg-config",
+      "brew": "pkg-config"
+    },
+    "rustc": {
+      "type": "binary",
+      "pkg_config": null,
+      "apt": "rustc",
+      "rpm": "rust",
+      "brew": "rust"
+    },
+    "cargo": {
+      "type": "binary",
+      "pkg_config": null,
+      "apt": "cargo",
+      "rpm": "cargo",
+      "brew": "rust"
+    }
+  }
+}
