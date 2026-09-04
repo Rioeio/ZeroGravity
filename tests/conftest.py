@@ -7,6 +7,16 @@ import pytest
 from zerogravity.resolver.models import BinaryProbe, SystemSnapshot
 
 
+@pytest.fixture(autouse=True)
+def reset_library_detection_cache():
+    """Ensure each test runs with a clean library detection cache."""
+    from zerogravity.scanner.lib_detector import clear_detection_cache
+
+    clear_detection_cache()
+    yield
+    clear_detection_cache()
+
+
 @pytest.fixture
 def fixtures_path() -> Path:
     return Path(__file__).parent / "test_fixtures"

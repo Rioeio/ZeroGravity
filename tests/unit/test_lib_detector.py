@@ -364,3 +364,106 @@ def test_json_data_used_when_no_custom_map():
     reqs = lookup_system_deps([dep])
     binaries = [r.required_binary for r in reqs]
     assert "openssl" in binaries
+
+
+# ── Memoization tests ────────────────────────────────────────────────────────
+
+def test_pkg_config_memoized_per_library():
+    """_try_pkg_config invokes subprocess only once per unique library name."""
+    from zerogravity.scanner.lib_detector import clear_detection_cache
+
+    clear_detection_cache()
+    with patch("zerogravity.scanner.lib_detector.shutil.which", return_value="/usr/bin/pkg-config"), \
+         patch("zerogravity.scanner.lib_detector.subprocess.run") as mock_run:
+        mock_run.side_effect = [
+            MagicMock(returncode=0),
+            MagicMock(returncode=0, stdout="2.1.0"),
+        ]
+        # First call invokes subprocess (exists + modversion)
+        p1 = _try_pkg_config("libjpeg", _META)
+        assert p1 is not None and p1.installed is True
+        assert mock_run.call_count == 2
+
+        # Second call for the same library must return cached probe without calling subprocess
+        p2 = _try_pkg_config("libjpeg", _META)
+        assert p2 is p1
+        assert mock_run.call_count == 2
+
+
+def test_ldconfig_memoized_and_reuses_dump():
+    """_try_ldconfig runs 'ldconfig -p' once and reuses parsed results across queries."""
+    from zerogravity.scanner.lib_detector import clear_detection_cache
+
+    clear_detection_cache()
+    ldconfig_output = (
+        "\tlibjpeg.so.8 (libc6,x86-64) => /usr/lib/libjpeg.so.8\n"
+        "\tlibpng.so.16 (libc6,x86-64) => /usr/lib/libpng.so.16\n"
+    )
+    with patch("zerogravity.scanner.lib_detector.platform.system", return_value="Linux"), \
+         patch("zerogravity.scanner.lib_detector.shutil.which", return_value="/sbin/ldconfig"), \
+         patch("zerogravity.scanner.lib_detector.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0, stdout=ldconfig_output)
+
+        # First query runs subprocess
+        p1 = _try_ldconfig("libjpeg", _META)
+        assert p1 is not None and p1.installed is True
+        assert mock_run.call_count == 1
+
+        # Second query for the SAME library returns memoized probe without subprocess
+        p1_cached = _try_ldconfig("libjpeg", _META)
+        assert p1_cached is p1
+        assert mock_run.call_count == 1
+
+        # Query for a DIFFERENT library reuses the cached ldconfig -p dump without re-running subprocess
+        meta_png = {"type": "library", "pkg_config": "libpng"}
+        p2 = _try_ldconfig("libpng", meta_png)
+        assert p2 is not None and p2.installed is True
+        assert mock_run.call_count == 1
+
+
+def test_dpkg_memoized_per_library():
+    """_try_dpkg invokes subprocess only once per unique library name."""
+    from zerogravity.scanner.lib_detector import clear_detection_cache
+
+    clear_detection_cache()
+    dpkg_output = (
+        "ii  libjpeg-dev     2.1.5-2       amd64 ...\n"
+    )
+    with patch("zerogravity.scanner.lib_detector.shutil.which", return_value="/usr/bin/dpkg"), \
+         patch("zerogravity.scanner.lib_detector.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0, stdout=dpkg_output)
+
+        p1 = _try_dpkg("libjpeg", _META)
+        assert p1 is not None and p1.installed is True
+        assert mock_run.call_count == 1
+
+        # Second call returns cached without invoking subprocess
+        p2 = _try_dpkg("libjpeg", _META)
+        assert p2 is p1
+        assert mock_run.call_count == 1
+
+
+def test_detect_library_memoization_across_calls():
+    """detect_library returns memoized probe on subsequent lookups."""
+    from zerogravity.scanner.lib_detector import clear_detection_cache
+
+    clear_detection_cache()
+    calls = 0
+
+    def mock_strategy(name: str, meta: dict) -> BinaryProbe:
+        nonlocal calls
+        calls += 1
+        return BinaryProbe(name=name, installed=True, path="mock:path")
+
+    with patch("zerogravity.scanner.lib_detector.DETECTION_STRATEGIES", [mock_strategy]):
+        p1 = detect_library("libcustom", {"type": "library"})
+        assert calls == 1
+        p2 = detect_library("libcustom", {"type": "library"})
+        assert calls == 1
+        assert p2 is p1
+
+        # After clearing cache, strategy runs again
+        clear_detection_cache()
+        p3 = detect_library("libcustom", {"type": "library"})
+        assert calls == 2
+        assert p3.installed is True

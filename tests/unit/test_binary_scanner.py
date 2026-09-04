@@ -102,3 +102,98 @@ async def test_probe_binary_library_fallback():
     assert result.name == "libjpeg"
     assert result.version == "2.1.0"
     assert result.path == "pkg-config:libjpeg"
+
+
+def test_compute_scoped_binaries_empty_manifests():
+    """Empty manifests list resolves to exactly the baseline runtime binaries."""
+    from zerogravity.scanner.binary_scanner import (
+        BASELINE_RUNTIME_BINARIES,
+        compute_scoped_binaries,
+    )
+
+    scoped = compute_scoped_binaries([])
+    assert scoped == sorted(BASELINE_RUNTIME_BINARIES)
+
+
+def test_compute_scoped_binaries_with_deps_and_engines():
+    """Manifest dependencies requiring system binaries and engines are included and deduped."""
+    from pathlib import Path
+
+    from zerogravity.parsers.base import Dependency, DependencyType, Ecosystem, ProjectManifest
+    from zerogravity.scanner.binary_scanner import (
+        BASELINE_RUNTIME_BINARIES,
+        compute_scoped_binaries,
+    )
+
+    # pillow requires: libjpeg, zlib, libpng, libtiff, libwebp
+    # cryptography requires: openssl
+    m1 = ProjectManifest(
+        project_path=Path("/app1"),
+        project_name="app1",
+        ecosystem=Ecosystem.PYTHON,
+        dependencies=[
+            Dependency(name="pillow", version_spec=">=10.0.0", dep_type=DependencyType.PRODUCTION, source="reqs"),
+            Dependency(name="cryptography", version_spec=">=41.0.0", dep_type=DependencyType.PRODUCTION, source="reqs"),
+        ],
+        engine_constraints={"python": ">=3.11"},
+    )
+    m2 = ProjectManifest(
+        project_path=Path("/app2"),
+        project_name="app2",
+        ecosystem=Ecosystem.NODE,
+        dependencies=[
+            # canvas requires: pkg-config, cairo, libjpeg, libpng (overlaps with pillow)
+            Dependency(name="canvas", version_spec="^2.11.2", dep_type=DependencyType.PRODUCTION, source="package.json"),
+        ],
+        engine_constraints={"node": ">=18.0.0", "custom-engine": ">=1.0"},
+    )
+
+    scoped = compute_scoped_binaries([m1, m2])
+
+    for base in BASELINE_RUNTIME_BINARIES:
+        assert base in scoped
+    # System deps from pillow
+    for dep in ["libjpeg", "zlib", "libpng", "libtiff", "libwebp", "openssl"]:
+        assert dep in scoped
+    # System deps from canvas
+    for dep in ["pkg-config", "cairo"]:
+        assert dep in scoped
+    # Engine constraints
+    assert "custom-engine" in scoped
+    # Result must be sorted and have no duplicates
+    assert scoped == sorted(set(scoped))
+
+
+def test_compute_scoped_binaries_with_custom_map():
+    """Custom binary map overrides in config take precedence and are included."""
+    from pathlib import Path
+
+    from zerogravity.parsers.base import Dependency, DependencyType, Ecosystem, ProjectManifest
+    from zerogravity.scanner.binary_scanner import compute_scoped_binaries
+
+    m = ProjectManifest(
+        project_path=Path("/app"),
+        project_name="app",
+        ecosystem=Ecosystem.PYTHON,
+        dependencies=[
+            Dependency(name="my-lib", version_spec="1.0", dep_type=DependencyType.PRODUCTION, source="reqs"),
+        ],
+    )
+
+    custom_map = {"my-lib": ["special-tool", "clang"]}
+    scoped = compute_scoped_binaries([m], custom_map=custom_map)
+
+    assert "special-tool" in scoped
+    assert "clang" in scoped
+
+
+@pytest.mark.asyncio
+async def test_run_full_scan_clears_detection_cache():
+    """run_full_scan calls clear_detection_cache before probing."""
+    from zerogravity.resolver.models import BinaryProbe
+
+    with patch("zerogravity.scanner.lib_detector.clear_detection_cache") as mock_clear, \
+         patch("zerogravity.scanner.binary_scanner.probe_binary", return_value=BinaryProbe(name="node", installed=True)):
+        results = await run_full_scan(["node"])
+        assert mock_clear.called
+        assert "node" in results

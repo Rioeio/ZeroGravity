@@ -294,3 +294,72 @@ def test_doctor_no_manifests(tmp_path: Path):
     assert result.exit_code == 0
     assert "No supported manifest" in result.stdout
 
+
+def test_scan_passes_scoped_binaries_to_run_scan_sync(node_project_path: Path):
+    """zg scan passes explicit scoped binaries list to run_scan_sync."""
+    from unittest.mock import patch
+
+    with patch("zerogravity.scanner.binary_scanner.run_scan_sync") as mock_scan:
+        mock_scan.return_value = {}
+        result = runner.invoke(app, ["scan", str(node_project_path)])
+        assert result.exit_code == 0
+        assert mock_scan.called
+        call_kwargs = mock_scan.call_args.kwargs
+        assert "binaries" in call_kwargs
+        scoped_list = call_kwargs["binaries"]
+        assert isinstance(scoped_list, list)
+        # Should include baseline binaries
+        assert "node" in scoped_list
+        assert "git" in scoped_list
+        # Should NOT include unreferenced catalog items like vips or liblapack
+        assert "vips" not in scoped_list
+        assert "liblapack" not in scoped_list
+
+
+def test_heal_passes_scoped_binaries_to_run_scan_sync(node_project_path: Path):
+    """zg heal passes explicit scoped binaries list to run_scan_sync."""
+    from unittest.mock import patch
+
+    with patch("zerogravity.scanner.binary_scanner.run_scan_sync") as mock_scan:
+        mock_scan.return_value = {}
+        result = runner.invoke(app, ["heal", str(node_project_path), "--auto-approve"])
+        assert result.exit_code == 0
+        assert mock_scan.called
+        call_kwargs = mock_scan.call_args.kwargs
+        assert "binaries" in call_kwargs
+        scoped_list = call_kwargs["binaries"]
+        assert isinstance(scoped_list, list)
+        assert "node" in scoped_list
+        assert "vips" not in scoped_list
+
+
+def test_doctor_passes_scoped_binaries_to_run_scan_sync(node_project_path: Path):
+    """zg doctor passes explicit scoped binaries list to run_scan_sync."""
+    from unittest.mock import patch
+
+    with patch("zerogravity.scanner.binary_scanner.run_scan_sync") as mock_scan:
+        mock_scan.return_value = {}
+        result = runner.invoke(app, ["doctor", str(node_project_path)])
+        assert result.exit_code == 0
+        assert mock_scan.called
+        call_kwargs = mock_scan.call_args.kwargs
+        assert "binaries" in call_kwargs
+        scoped_list = call_kwargs["binaries"]
+        assert isinstance(scoped_list, list)
+        assert "node" in scoped_list
+        assert "vips" not in scoped_list
+
+
+def test_audit_retains_full_catalog_default():
+    """zg audit calls run_scan_sync with default None (full-catalog)."""
+    from unittest.mock import patch
+
+    with patch("zerogravity.scanner.binary_scanner.run_scan_sync") as mock_scan:
+        mock_scan.return_value = {}
+        result = runner.invoke(app, ["audit"])
+        assert result.exit_code == 0
+        assert mock_scan.called
+        # Standalone audit must not pass a scoped list — keep the full catalog default
+        assert mock_scan.call_args.kwargs.get("binaries") is None
+
+

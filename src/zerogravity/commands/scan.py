@@ -110,7 +110,7 @@ def scan_command(
     from zerogravity.parsers.registry import detect_and_parse
     from zerogravity.resolver.conflict_detector import detect_conflicts
     from zerogravity.resolver.models import SystemSnapshot
-    from zerogravity.scanner.binary_scanner import run_scan_sync
+    from zerogravity.scanner.binary_scanner import compute_scoped_binaries, run_scan_sync
     from zerogravity.scanner.env_scanner import get_platform_info
     from zerogravity.scanner.version_manager import detect_all_managers_sync
     from zerogravity.security.scanner import scan_vulnerabilities
@@ -171,7 +171,11 @@ def scan_command(
 
     # ── Step 2: Probe OS state ───────────────────────────────────────────
     with console.status("[zg.accent]Scanning system binaries...[/]", spinner="dots"):
-        binaries = run_scan_sync()
+        scoped_binaries = compute_scoped_binaries(
+            manifests,
+            custom_map=config.binary_map if config else None,
+        )
+        binaries = run_scan_sync(binaries=scoped_binaries)
         platform_info = get_platform_info()
         version_managers = detect_all_managers_sync()
 

@@ -41,7 +41,7 @@ def doctor_command(
     from zerogravity.parsers.registry import detect_and_parse
     from zerogravity.resolver.conflict_detector import detect_conflicts
     from zerogravity.resolver.models import SystemSnapshot
-    from zerogravity.scanner.binary_scanner import run_scan_sync
+    from zerogravity.scanner.binary_scanner import compute_scoped_binaries, run_scan_sync
     from zerogravity.scanner.env_scanner import get_platform_info
     from zerogravity.scanner.version_manager import detect_all_managers_sync
     from zerogravity.ui.renderers import render_system_snapshot
@@ -55,11 +55,21 @@ def doctor_command(
     print_banner()
     console.print("[zg.accent]Running full diagnostic...[/]\n")
 
+    config = load_config(project_path)
+
+    with console.status("[zg.accent]Parsing project manifests...[/]", spinner="dots"):
+        manifests = detect_and_parse(project_path)
+
+    scoped_binaries = compute_scoped_binaries(
+        manifests,
+        custom_map=config.binary_map if config else None,
+    )
+
     # ── Step 1: Audit — probe system environment ────────────────────────
     print_section("Step 1/3 — System Audit")
 
     with console.status("[zg.accent]Probing system binaries & version managers...[/]", spinner="dots"):
-        binaries = run_scan_sync()
+        binaries = run_scan_sync(binaries=scoped_binaries)
         platform_info = get_platform_info()
         version_managers = detect_all_managers_sync()
 
@@ -79,11 +89,6 @@ def doctor_command(
 
     # ── Step 2: Scan — parse manifests and detect conflicts ─────────────
     print_section("Step 2/3 — Project Scan")
-
-    config = load_config(project_path)
-
-    with console.status("[zg.accent]Parsing project manifests...[/]", spinner="dots"):
-        manifests = detect_and_parse(project_path)
 
     if not manifests:
         print_info(f"No supported manifest files found in {project_path.name}")

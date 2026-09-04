@@ -6,11 +6,23 @@ import shutil
 import sys
 from typing import Dict, List, Optional
 
+from zerogravity.parsers.base import ProjectManifest
 from zerogravity.resolver.binary_lookup import (
     get_all_required_system_binaries,
     get_library_metadata,
+    lookup_system_deps,
 )
 from zerogravity.resolver.models import BinaryProbe
+
+BASELINE_RUNTIME_BINARIES: list[str] = [
+    "node",
+    "python3",
+    "python",
+    "npm",
+    "pip",
+    "git",
+    "docker",
+]
 
 BINARY_MANIFEST = {
     "node": ["node", "--version"],
@@ -34,6 +46,25 @@ BINARY_MANIFEST = {
 for _binary in get_all_required_system_binaries():
     if _binary not in BINARY_MANIFEST:
         BINARY_MANIFEST[_binary] = [_binary, "--version"]
+
+
+def compute_scoped_binaries(
+    manifests: list[ProjectManifest],
+    custom_map: dict[str, list[str]] | None = None,
+) -> list[str]:
+    """Compute project-relevant binaries and libraries scoped to manifests.
+
+    Unions baseline runtime binaries with system dependencies required by all
+    package dependencies across all manifests, plus any declared engine constraints.
+    """
+    scoped: set[str] = set(BASELINE_RUNTIME_BINARIES)
+    for manifest in manifests:
+        for engine in manifest.engine_constraints.keys():
+            scoped.add(engine)
+        reqs = lookup_system_deps(manifest.dependencies, custom_map=custom_map)
+        for req in reqs:
+            scoped.add(req.required_binary)
+    return sorted(scoped)
 
 async def probe_binary(name: str, command: List[str]) -> BinaryProbe:
     """Probes a binary to get its version and status."""
@@ -122,6 +153,10 @@ async def probe_binary(name: str, command: List[str]) -> BinaryProbe:
 
 async def run_full_scan(binaries: Optional[List[str]] = None) -> Dict[str, BinaryProbe]:
     """Runs a full asynchronous scan of all or specified binaries."""
+    from zerogravity.scanner.lib_detector import clear_detection_cache
+
+    clear_detection_cache()
+
     if binaries is None:
         binaries = list(BINARY_MANIFEST.keys())
 
