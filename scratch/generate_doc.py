@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
+
 import docx
-from docx.shared import Inches, Pt, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
-from docx.oxml import OxmlElement, parse_xml
-from docx.oxml.ns import qn, nsdecls
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Inches, Pt, RGBColor
+
 
 def create_docx_report(target_docx: Path, target_md: Path) -> None:
     doc = docx.Document()
@@ -25,7 +24,6 @@ def create_docx_report(target_docx: Path, target_md: Path) -> None:
     NAVY = RGBColor(0x1A, 0x23, 0x7E)
     PURPLE = RGBColor(0x31, 0x1B, 0x92)
     DARK_GRAY = RGBColor(0x33, 0x33, 0x33)
-    LIGHT_GRAY = RGBColor(0xF5, 0xF5, 0xF5)
 
     # Title
     p_title = doc.add_paragraph()
@@ -309,7 +307,7 @@ def create_docx_report(target_docx: Path, target_md: Path) -> None:
     # Write Markdown file
     md_content = """# ZeroGravity (zg) — Technical Proof-of-Concept & Implementation Specification
 
-**Bridging Codebase Dependencies and Local Operating System Environments**  
+**Bridging Codebase Dependencies and Local Operating System Environments**
 *Version 0.3.0 Architecture & Engineering Report*
 
 ---
