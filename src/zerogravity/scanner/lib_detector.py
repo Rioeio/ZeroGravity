@@ -10,7 +10,6 @@ portable strategies to determine whether the library is installed:
 3. ``dpkg -l <apt_name>``             — Debian/Ubuntu package manager
 4. ``rpm -q <rpm_name>``              — RHEL/Fedora package manager
 5. ``brew list <brew_name>``          — macOS Homebrew
-6. ``shutil.which(name)``             — final fallback
 
 Each strategy returns a :class:`BinaryProbe` on success or ``None`` to
 let the next strategy try.
@@ -270,7 +269,6 @@ DETECTION_STRATEGIES = [
     _try_dpkg,
     _try_rpm,
     _try_brew,
-    _try_which,
 ]
 
 

@@ -73,7 +73,7 @@
   },
   "library_metadata": {
     "openssl": {
-      "type": "binary",
+      "type": "library",
       "pkg_config": "openssl",
       "apt": "libssl-dev",
       "rpm": "openssl-devel",

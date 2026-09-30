@@ -43,6 +43,10 @@ htmlcov/
 # ZeroGravity runtime
 .zerogravity/
 
+# Generated documentation artifacts
+docs/*.docx
+docs/*.md
+
 # OS files
 .DS_Store
 Thumbs.db

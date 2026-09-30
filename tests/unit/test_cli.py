@@ -32,8 +32,11 @@ def test_cli_help_shows_completion_options():
 
 
 def test_cli_show_completion_exits_zero():
-    """--show-completion bash should print a completion script and exit 0."""
-    result = runner.invoke(app, ["--show-completion", "bash"])
+    """--show-completion should print a completion script and exit 0 independently of host $SHELL."""
+    from unittest.mock import patch
+
+    with patch("typer.completion._get_shell_name", return_value="bash"):
+        result = runner.invoke(app, ["--show-completion", "bash"])
     # Typer's show-completion prints a bash completion script.
     # Exit code 0 confirms the flag is wired up and functional.
     assert result.exit_code == 0
@@ -148,11 +151,19 @@ def test_heal_command_executes_nvm_remediation(node_project_path: Path, tmp_path
     """
     from unittest.mock import MagicMock, patch
 
-    from zerogravity.resolver.models import VersionManagerInfo
+    from zerogravity.resolver.models import BinaryProbe, VersionManagerInfo
 
     (tmp_path / "nvm.sh").write_text("# fake nvm.sh")
 
+    fake_binaries = {
+        "node": BinaryProbe(name="node", installed=False),
+        "npm": BinaryProbe(name="npm", installed=False),
+    }
+
     with patch(
+        "zerogravity.scanner.binary_scanner.run_scan_sync",
+        return_value=fake_binaries,
+    ), patch(
         "zerogravity.scanner.version_manager.detect_all_managers_sync",
         return_value={"nvm": VersionManagerInfo(name="nvm", detected=True, root_path=str(tmp_path))},
     ), patch("subprocess.run") as mock_run:
@@ -160,10 +171,10 @@ def test_heal_command_executes_nvm_remediation(node_project_path: Path, tmp_path
         result = runner.invoke(app, ["heal", str(node_project_path), "--auto-approve"])
 
     assert result.exit_code == 0
-    if mock_run.called:
-        args = mock_run.call_args[0][0]
-        assert args[0] == "bash"
-        assert args[1] == "-c"
+    assert mock_run.called
+    args = mock_run.call_args[0][0]
+    assert args[0] == "bash"
+    assert args[1] == "-c"
 
 
 def test_why_command_direct_dep(node_project_path: Path):

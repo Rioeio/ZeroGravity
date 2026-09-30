@@ -24,6 +24,25 @@ BASELINE_RUNTIME_BINARIES: list[str] = [
     "docker",
 ]
 
+CORE_SYSTEM_BINARIES: list[str] = [
+    "node",
+    "python3",
+    "python",
+    "npm",
+    "pip",
+    "docker",
+    "git",
+    "openssl",
+    "gcc",
+    "make",
+    "go",
+    "rust",
+    "rustc",
+    "cargo",
+    "ruby",
+    "java",
+]
+
 BINARY_MANIFEST = {
     "node": ["node", "--version"],
     "python3": ["python3", "--version"],
@@ -66,8 +85,18 @@ def compute_scoped_binaries(
             scoped.add(req.required_binary)
     return sorted(scoped)
 
+
 async def probe_binary(name: str, command: List[str]) -> BinaryProbe:
     """Probes a binary to get its version and status."""
+    # Shared libraries (e.g. openssl, libjpeg) must be detected via
+    # pkg-config/ldconfig/package managers rather than searching PATH.
+    # Checking library metadata first prevents naming collisions where a CLI tool
+    # (e.g. /usr/bin/openssl) shadows a missing development library (e.g. libssl-dev).
+    metadata = get_library_metadata(name)
+    if metadata and metadata.get("type") == "library":
+        from zerogravity.scanner.lib_detector import detect_library
+        return detect_library(name, metadata)
+
     # Handle Windows specific logic for python3
     if sys.platform == "win32" and name == "python3":
         path = shutil.which("python3")
@@ -83,11 +112,6 @@ async def probe_binary(name: str, command: List[str]) -> BinaryProbe:
         path = shutil.which(name)
 
     if not path:
-        # Fallback: try library detection for shared libraries
-        metadata = get_library_metadata(name)
-        if metadata and metadata.get("type") == "library":
-            from zerogravity.scanner.lib_detector import detect_library
-            return detect_library(name, metadata)
         return BinaryProbe(name=name, installed=False, path=None, version=None, error=None)
 
     exec_cmd = list(command)
@@ -158,7 +182,7 @@ async def run_full_scan(binaries: Optional[List[str]] = None) -> Dict[str, Binar
     clear_detection_cache()
 
     if binaries is None:
-        binaries = list(BINARY_MANIFEST.keys())
+        binaries = list(CORE_SYSTEM_BINARIES)
 
     tasks = []
     for binary in binaries:

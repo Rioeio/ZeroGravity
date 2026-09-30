@@ -104,6 +104,41 @@ async def test_probe_binary_library_fallback():
     assert result.path == "pkg-config:libjpeg"
 
 
+@pytest.mark.asyncio
+async def test_probe_binary_openssl_library_not_shadowed_by_cli():
+    """probe_binary checks library metadata before PATH so a CLI tool does not shadow a missing library."""
+    from zerogravity.resolver.models import BinaryProbe
+
+    missing_lib_probe = BinaryProbe(name="openssl", installed=False, path=None, version=None)
+
+    # Simulate /usr/bin/openssl existing on PATH, but library detection failing (e.g. libssl-dev missing)
+    with patch("zerogravity.scanner.binary_scanner.shutil.which", return_value="/usr/bin/openssl"), \
+         patch("zerogravity.scanner.lib_detector.detect_library", return_value=missing_lib_probe) as mock_detect:
+        result = await probe_binary("openssl", ["openssl", "version"])
+
+    assert result.installed is False
+    assert mock_detect.called
+
+
+@pytest.mark.asyncio
+async def test_run_full_scan_defaults_to_core_binaries_not_libraries():
+    """run_full_scan without arguments probes CORE_SYSTEM_BINARIES and does not probe the ~25 shared libraries."""
+    from zerogravity.resolver.models import BinaryProbe
+    from zerogravity.scanner.binary_scanner import CORE_SYSTEM_BINARIES
+
+    async def fake_probe(name: str, cmd: list[str]) -> BinaryProbe:
+        return BinaryProbe(name=name, installed=True)
+
+    with patch("zerogravity.scanner.binary_scanner.probe_binary", side_effect=fake_probe):
+        results = await run_full_scan()
+
+    assert set(results.keys()) == set(CORE_SYSTEM_BINARIES)
+    assert "libjpeg" not in results
+    assert "vips" not in results
+    assert "librdkafka" not in results
+    assert "cairo" not in results
+
+
 def test_compute_scoped_binaries_empty_manifests():
     """Empty manifests list resolves to exactly the baseline runtime binaries."""
     from zerogravity.scanner.binary_scanner import (
