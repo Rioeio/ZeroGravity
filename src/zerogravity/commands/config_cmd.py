@@ -61,6 +61,11 @@ def config_check(
     heal_source = file_source if (has_file and cfg.healing_prefer) else "default"
     table.add_row("healing.prefer", str(cfg.healing_prefer) if cfg.healing_prefer else "[]", heal_source)
 
+    net_source = file_source if (has_file and (not cfg.network_enabled or cfg.network_max_workers != 8 or cfg.network_timeout != 5)) else "default"
+    table.add_row("network.enabled", str(cfg.network_enabled), net_source)
+    table.add_row("network.max_workers", str(cfg.network_max_workers), net_source)
+    table.add_row("network.timeout", str(cfg.network_timeout), net_source)
+
     console.print(table)
     if has_file:
         console.print(f"[zg.ok]Configuration file:[/] {cfg.config_path}")

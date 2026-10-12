@@ -121,6 +121,11 @@ def scan_command(
         "--fail-on-outdated",
         help="Fail with exit code 1 if outdated dependencies at or above threshold: none, patch, minor, major.",
     ),
+    include_transitive: bool = typer.Option(
+        False,
+        "--include-transitive",
+        help="Include transitive dependencies in outdated check (defaults to direct dependencies only).",
+    ),
 ) -> None:
     """
     Scan project directories for dependency conflicts, missing binaries,
@@ -236,9 +241,15 @@ def scan_command(
 
     # ── Step 4: Check outdated dependencies ──────────────────────────────
     outdated_report = None
+    effective_offline = offline or not (config.network_enabled if config else True)
     if manifests:
         with console.status("[zg.accent]Checking package registries for updates...[/]", spinner="dots"):
-            outdated_report = check_outdated_dependencies(manifests, offline=offline)
+            outdated_report = check_outdated_dependencies(
+                manifests,
+                offline=effective_offline,
+                include_transitive=include_transitive,
+                max_workers=config.network_max_workers if config else 8,
+            )
         if output_format == "table":
             render_outdated_summary(outdated_report)
 
@@ -246,7 +257,7 @@ def scan_command(
     security_report = None
     if manifests:
         with console.status("[zg.accent]Querying OSV.dev vulnerability database...[/]", spinner="dots"):
-            security_report = scan_vulnerabilities(manifests, offline=offline, no_cache=no_cache)
+            security_report = scan_vulnerabilities(manifests, offline=effective_offline, no_cache=no_cache)
         if output_format == "table":
             render_security_summary(security_report)
 

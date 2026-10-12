@@ -49,6 +49,11 @@ def outdated_command(
         "--fail-on-outdated",
         help="Fail with exit code 1 if outdated dependencies at or above threshold: none, patch, minor, major.",
     ),
+    include_transitive: bool = typer.Option(
+        False,
+        "--include-transitive",
+        help="Include transitive dependencies in outdated check (defaults to direct dependencies only).",
+    ),
 ) -> None:
     """
     Check project dependencies against npm and PyPI registries for available updates.
@@ -102,13 +107,21 @@ def outdated_command(
         print_info(f"No supported manifest files found in {paths_str}")
         return
 
+    effective_offline = offline or not getattr(config, "network_enabled", True)
     with console.status("[zg.accent]Checking package registries for updates...[/]", spinner="dots"):
-        report = check_outdated_dependencies(manifests, offline=offline)
+        report = check_outdated_dependencies(
+            manifests,
+            offline=effective_offline,
+            include_transitive=include_transitive,
+            max_workers=getattr(config, "network_max_workers", 8),
+        )
 
     if output_format == "json":
         result = {
             "complete": getattr(report, "complete", True),
             "errors": getattr(report, "errors", []),
+            "unresolved": getattr(report, "unresolved", []),
+            "private_skipped": getattr(report, "private_skipped", []),
             "summary": report.summary,
             "packages": [
                 {

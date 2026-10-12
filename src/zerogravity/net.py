@@ -73,6 +73,8 @@ def request_json(
         body_bytes = json.dumps(data).encode("utf-8")
         req_headers["Content-Type"] = "application/json"
 
+    show_network_notice_once()
+
     for attempt in range(1, max_retries + 2):
         req = urllib.request.Request(
             url,
@@ -109,3 +111,43 @@ def request_json(
                 time.sleep(sleep_time)
                 continue
             raise NetworkError(f"Connection error requesting {url}: {err}") from err
+
+
+_notice_shown_this_run: bool = False
+
+
+def reset_network_notice() -> None:
+    """Reset the per-run notice flag (used for testing)."""
+    global _notice_shown_this_run
+    _notice_shown_this_run = False
+
+
+def show_network_notice_once(state_dir: Any = None, printer: Any = None) -> bool:
+    """Print one-line notice on first outbound network call of any run."""
+    global _notice_shown_this_run
+    if state_dir is not None:
+        from pathlib import Path
+
+        from zerogravity.state import ensure_state_dir
+        target_dir = Path(state_dir)
+        ensure_state_dir(target_dir)
+        notice_file = target_dir / ".network_notice_shown"
+        if notice_file.exists():
+            return False
+        try:
+            notice_file.write_text("shown\n", encoding="utf-8")
+        except OSError:
+            pass
+    elif _notice_shown_this_run:
+        return False
+
+    msg = "Querying public registries (npm, PyPI, crates.io, Go proxy)..."
+    if printer is not None:
+        printer(msg)
+    else:
+        from zerogravity.ui.console import console
+
+        console.print(f"[zg.info]{msg}[/]")
+
+    _notice_shown_this_run = True
+    return True

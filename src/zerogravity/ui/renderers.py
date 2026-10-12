@@ -354,12 +354,31 @@ def render_outdated_report(report: Any) -> None:
             )
         )
 
+    _render_outdated_notices(report)
+
     if not report.packages:
         if getattr(report, "complete", True):
             console.print("[zg.ok]  All dependencies are up to date.[/]")
         else:
             console.print("[zg.warning]  Outdated scan was incomplete. Outdated packages may be undetected.[/]")
         return
+
+
+def _render_outdated_notices(report: Any) -> None:
+    """Render unresolved and private skipped dependency notes."""
+    unresolved = getattr(report, "unresolved", [])
+    if unresolved:
+        preview = ", ".join(unresolved[:5])
+        if len(unresolved) > 5:
+            preview += f" ... (+{len(unresolved) - 5} more)"
+        console.print(f"[zg.warning]  {len(unresolved)} unresolved dependencies not checked: {preview}[/]")
+
+    private_skipped = getattr(report, "private_skipped", [])
+    if private_skipped:
+        preview = ", ".join(private_skipped[:5])
+        if len(private_skipped) > 5:
+            preview += f" ... (+{len(private_skipped) - 5} more)"
+        console.print(f"[zg.dim]  {len(private_skipped)} private dependencies skipped: {preview}[/]")
 
     table = Table(
         title="[zg.accent]Outdated Packages[/]",

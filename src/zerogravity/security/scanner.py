@@ -8,6 +8,7 @@ import math
 import re
 from typing import Any
 
+from zerogravity.outdated.checker import is_private_dependency
 from zerogravity.parsers.base import Ecosystem, ProjectManifest
 from zerogravity.security.models import (
     SecurityReport,
@@ -157,6 +158,10 @@ def scan_vulnerabilities(
         for dep in manifest.dependencies:
             # Skip internal workspace packages
             if dep.metadata.get("workspace_internal"):
+                continue
+
+            # Skip private dependencies
+            if is_private_dependency(dep, manifest):
                 continue
 
             # Query only resolved versions; range-only specs are counted as unresolved

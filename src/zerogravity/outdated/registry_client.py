@@ -159,3 +159,62 @@ class RegistryClient:
                 return latest_version
 
         return cached_version
+
+    def get_latest_crates_version(self, package_name: str, offline: bool = False) -> str | None:
+        """Query crates.io API for the latest version of a Rust crate."""
+        clean_name = package_name.strip()
+        if not clean_name:
+            return None
+
+        cache_key = f"cargo:{clean_name.lower()}"
+        cached_version, is_fresh = self._get_cached_version(cache_key, offline)
+        if is_fresh or (offline and cached_version is not None):
+            return cached_version
+
+        if offline:
+            return None
+
+        url = f"https://crates.io/api/v1/crates/{urllib.parse.quote(clean_name)}"
+        headers = {"User-Agent": "ZeroGravity/0.3.0 (+https://github.com/Rioeio/ZeroGravity)"}
+
+        try:
+            data = request_json(url, method="GET", headers=headers, timeout=self.timeout)
+            if data and isinstance(data, dict):
+                crate_info = data.get("crate", {})
+                latest_version = crate_info.get("max_version") or crate_info.get("newest_version")
+                if latest_version and isinstance(latest_version, str):
+                    self._cache_version(cache_key, latest_version)
+                    return latest_version
+        except (NetworkError, OSError, ValueError) as err:
+            self.errors.append(f"Registry request failed for {url}: {err}")
+            self.complete = False
+            return None
+
+        return cached_version
+
+    def get_latest_go_version(self, module_path: str, offline: bool = False) -> str | None:
+        """Query Go module proxy for the latest version with case-escaping."""
+        clean_path = module_path.strip()
+        if not clean_path:
+            return None
+
+        cache_key = f"go:{clean_path.lower()}"
+        cached_version, is_fresh = self._get_cached_version(cache_key, offline)
+        if is_fresh or (offline and cached_version is not None):
+            return cached_version
+
+        if offline:
+            return None
+
+        escaped_path = "".join("!" + c.lower() if "A" <= c <= "Z" else c for c in clean_path)
+        url = f"https://proxy.golang.org/{escaped_path}/@latest"
+
+        data = self._fetch_json(url)
+        if data and isinstance(data, dict):
+            raw_ver = data.get("Version")
+            if raw_ver and isinstance(raw_ver, str):
+                latest_version = raw_ver.lstrip("v")
+                self._cache_version(cache_key, latest_version)
+                return latest_version
+
+        return cached_version

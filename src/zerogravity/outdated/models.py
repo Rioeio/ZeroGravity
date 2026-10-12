@@ -50,6 +50,8 @@ class OutdatedReport:
     scanned_dependencies: int = 0
     errors: list[str] = field(default_factory=list)
     complete: bool = True
+    unresolved: list[str] = field(default_factory=list)
+    private_skipped: list[str] = field(default_factory=list)
 
     @property
     def major_count(self) -> int:

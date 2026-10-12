@@ -102,8 +102,9 @@ def security_command(
         print_info(f"No supported manifest files found in {paths_str}")
         return
 
+    effective_offline = offline or not getattr(config, "network_enabled", True)
     with console.status("[zg.accent]Querying OSV.dev vulnerability database...[/]", spinner="dots"):
-        report = scan_vulnerabilities(manifests, offline=offline, no_cache=no_cache)
+        report = scan_vulnerabilities(manifests, offline=effective_offline, no_cache=no_cache)
 
     if output_format == "json":
         result = {

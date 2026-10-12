@@ -95,6 +95,9 @@ class ZeroGravityConfig:
     ignore_packages: list[str] = field(default_factory=list)
     history_max_entries: int = 1000
     healing_prefer: list[str] = field(default_factory=list)
+    network_enabled: bool = True
+    network_max_workers: int = 8
+    network_timeout: int = 5
     config_path: Path | None = None
     warnings: list[str] = field(default_factory=list)
 
@@ -145,17 +148,21 @@ def parse_config_data(
     ignore_packages: list[str] = []
     history_max_entries: int = 1000
     healing_prefer: list[str] = []
+    network_enabled: bool = True
+    network_max_workers: int = 8
+    network_timeout: int = 5
     warnings: list[str] = []
 
-    known_sections = {"scan", "binary_map", "binary-map", "binaries", "ignore", "history", "healing"}
+    known_sections = {"scan", "binary_map", "binary-map", "binaries", "ignore", "history", "healing", "network"}
     known_scan_keys = {"exclude"}
     known_ignore_keys = {"issues", "categories", "packages"}
     known_history_keys = {"max_entries"}
     known_healing_keys = {"prefer"}
+    known_network_keys = {"enabled", "max_workers", "timeout"}
 
     for key in data:
         if key not in known_sections:
-            close = difflib.get_close_matches(key, ["scan", "binary_map", "ignore", "history", "healing"])
+            close = difflib.get_close_matches(key, ["scan", "binary_map", "ignore", "history", "healing", "network"])
             if close:
                 msg = f"Unknown section or key '{key}'. Did you mean '{close[0]}'?"
             else:
@@ -299,6 +306,39 @@ def parse_config_data(
                 line, col = _find_key_location(file_content, "prefer")
                 raise ConfigError("healing.prefer must be a list of strings", file=config_path, line=line, col=col)
 
+    # 6. Network section
+    if "network" in data:
+        network_section = data["network"]
+        if not isinstance(network_section, dict):
+            line, col = _find_key_location(file_content, "network")
+            raise ConfigError("[network] must be a section (table)", file=config_path, line=line, col=col)
+        for k in network_section:
+            if k not in known_network_keys:
+                close = difflib.get_close_matches(k, list(known_network_keys))
+                if close:
+                    msg = f"Unknown key '{k}' in [network]. Did you mean '{close[0]}'?"
+                else:
+                    msg = f"Unknown key '{k}' in [network]."
+                warnings.append(msg)
+        if "enabled" in network_section:
+            raw_en = network_section["enabled"]
+            if not isinstance(raw_en, bool):
+                line, col = _find_key_location(file_content, "enabled")
+                raise ConfigError("network.enabled must be a boolean", file=config_path, line=line, col=col)
+            network_enabled = raw_en
+        if "max_workers" in network_section:
+            raw_mw = network_section["max_workers"]
+            if not isinstance(raw_mw, int) or isinstance(raw_mw, bool) or raw_mw <= 0:
+                line, col = _find_key_location(file_content, "max_workers")
+                raise ConfigError("network.max_workers must be a positive integer", file=config_path, line=line, col=col)
+            network_max_workers = raw_mw
+        if "timeout" in network_section:
+            raw_to = network_section["timeout"]
+            if (not isinstance(raw_to, (int, float))) or isinstance(raw_to, bool) or raw_to <= 0:
+                line, col = _find_key_location(file_content, "timeout")
+                raise ConfigError("network.timeout must be a positive number", file=config_path, line=line, col=col)
+            network_timeout = int(raw_to)
+
     from zerogravity.ui.console import console
     for w in warnings:
         console.print(f"[zg.warning]Warning:[/] {w}")
@@ -310,6 +350,9 @@ def parse_config_data(
         ignore_packages=ignore_packages,
         history_max_entries=history_max_entries,
         healing_prefer=healing_prefer,
+        network_enabled=network_enabled,
+        network_max_workers=network_max_workers,
+        network_timeout=network_timeout,
         config_path=config_path,
         warnings=warnings,
     )
