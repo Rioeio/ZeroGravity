@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import configparser
 import re
 import tomllib
 from pathlib import Path
+from typing import Any
 
 from zerogravity.parsers.base import (
     BaseParser,
@@ -11,6 +13,11 @@ from zerogravity.parsers.base import (
     Ecosystem,
     ProjectManifest,
 )
+
+
+def _pep503_normalize(name: str) -> str:
+    """Normalize a Python package name per PEP 503."""
+    return re.sub(r"[-_.]+", "-", name).lower()
 
 
 def _extract_python_workspace_info(path: Path, data: dict) -> tuple[list[Path], set[str]]:
@@ -140,7 +147,7 @@ class PythonParser(BaseParser):
 
     def can_parse(self, path: Path) -> bool:
         """Check if any Python manifest files exist."""
-        manifests = ["requirements.txt", "pyproject.toml", "Pipfile"]
+        manifests = ["requirements.txt", "pyproject.toml", "Pipfile", "setup.cfg"]
         return any((path / m).is_file() for m in manifests)
 
     def _parse_pep508_req(self, req_str: str, source: str, dep_type: DependencyType) -> Dependency:
@@ -251,6 +258,43 @@ class PythonParser(BaseParser):
 
         return deps, metadata
 
+    def _parse_setup_cfg(self, path: Path) -> tuple[str | None, dict[str, str], list[Dependency]]:
+        """Parse setup.cfg metadata, options, and extras."""
+        project_name: str | None = None
+        engine_constraints: dict[str, str] = {}
+        deps: list[Dependency] = []
+
+        cp = configparser.ConfigParser()
+        try:
+            cp.read(path, encoding="utf-8")
+        except Exception:
+            return project_name, engine_constraints, deps
+
+        if cp.has_section("metadata"):
+            project_name = cp.get("metadata", "name", fallback=None)
+
+        if cp.has_section("options"):
+            py_req = cp.get("options", "python_requires", fallback=None)
+            if py_req:
+                engine_constraints["python"] = py_req.strip()
+
+            install_reqs = cp.get("options", "install_requires", fallback="")
+            for line in install_reqs.splitlines():
+                clean_line = line.strip()
+                if clean_line and not clean_line.startswith("#"):
+                    deps.append(self._parse_pep508_req(clean_line, path.name, DependencyType.PRODUCTION))
+
+        if cp.has_section("options.extras_require"):
+            for extra_name, val in cp.items("options.extras_require"):
+                for line in val.splitlines():
+                    clean_line = line.strip()
+                    if clean_line and not clean_line.startswith("#"):
+                        dep = self._parse_pep508_req(clean_line, path.name, DependencyType.OPTIONAL)
+                        dep.metadata["optional_group"] = extra_name
+                        deps.append(dep)
+
+        return project_name, engine_constraints, deps
+
     def _parse_pyproject_toml(self, path: Path) -> tuple[str | None, dict[str, str], list[Dependency], bool, dict]:
         """Parse pyproject.toml."""
         project_name: str | None = None
@@ -310,6 +354,45 @@ class PythonParser(BaseParser):
                     metadata=dep_meta,
                 ))
 
+        # PEP 735 dependency groups
+        dep_groups = raw_data.get("dependency-groups", {})
+        if isinstance(dep_groups, dict):
+            def _resolve_group(group_name: str, visited: set[str]) -> list[str]:
+                if group_name in visited or group_name not in dep_groups:
+                    return []
+                visited.add(group_name)
+                req_list: list[str] = []
+                for item in dep_groups[group_name]:
+                    if isinstance(item, str):
+                        req_list.append(item)
+                    elif isinstance(item, dict) and "include-group" in item:
+                        inc = item["include-group"]
+                        req_list.extend(_resolve_group(inc, visited))
+                return req_list
+
+            seen_group_deps: set[str] = set()
+            for g_name in dep_groups:
+                resolved_reqs = _resolve_group(g_name, set())
+                for req_str in resolved_reqs:
+                    dep = self._parse_pep508_req(req_str, path.name, DependencyType.DEVELOPMENT)
+                    dep.metadata["dependency_group"] = g_name
+                    norm_k = _pep503_normalize(dep.name)
+                    if norm_k not in seen_group_deps:
+                        seen_group_deps.add(norm_k)
+                        deps.append(dep)
+
+        # tool.uv dev-dependencies
+        if "tool" in raw_data and isinstance(raw_data["tool"], dict):
+            uv_tool = raw_data["tool"].get("uv", {})
+            if isinstance(uv_tool, dict):
+                uv_devs = uv_tool.get("dev-dependencies", [])
+                if isinstance(uv_devs, list):
+                    for req_str in uv_devs:
+                        if isinstance(req_str, str):
+                            dep = self._parse_pep508_req(req_str, path.name, DependencyType.DEVELOPMENT)
+                            dep.metadata["dependency_group"] = "dev"
+                            deps.append(dep)
+
         if (path.parent / "poetry.lock").is_file():
             poetry_lock = True
 
@@ -357,10 +440,25 @@ class PythonParser(BaseParser):
 
         if pipfile_path.is_file():
             manifest_files.append(str(pipfile_path))
-            if (path / "Pipfile.lock").is_file():
+
+        setup_cfg_path = path / "setup.cfg"
+        if setup_cfg_path.is_file():
+            manifest_files.append(str(setup_cfg_path))
+            cfg_name, cfg_engines, cfg_deps = self._parse_setup_cfg(setup_cfg_path)
+            if cfg_name and (not project_name or project_name == path.name):
+                project_name = cfg_name
+            if cfg_engines:
+                engine_constraints.update(cfg_engines)
+            dependencies.extend(cfg_deps)
+
+        for candidate_name in ["uv.lock", "pdm.lock", "poetry.lock", "Pipfile.lock"]:
+            candidate_path = path / candidate_name
+            if candidate_path.is_file():
                 lockfile_present = True
-                lockfile_path = str(path / "Pipfile.lock")
-                manifest_files.append(lockfile_path)
+                lockfile_path = str(candidate_path)
+                if lockfile_path not in manifest_files:
+                    manifest_files.append(lockfile_path)
+                break
 
         # Workspace detection
         is_workspace_root = False
@@ -403,20 +501,61 @@ class PythonParser(BaseParser):
                 dep.metadata["workspace_internal"] = True
 
         if lockfile_present and lockfile_path:
-            direct_dep_names = {dep.name.lower() for dep in dependencies}
-            resolved_map = {}
+            direct_dep_norm_names = {_pep503_normalize(dep.name) for dep in dependencies}
+            resolved_map: dict[str, str] = {}
             lockfile_name = Path(lockfile_path).name
+            lock_packages: list[dict[str, Any]] = []
 
-            if lockfile_name == "poetry.lock":
+            if lockfile_name in ("uv.lock", "pdm.lock"):
                 try:
                     with open(lockfile_path, "rb") as f:
                         lock_data = tomllib.load(f)
-                    if "package" in lock_data:
-                        for pkg in lock_data["package"]:
-                            name = pkg.get("name")
-                            version = pkg.get("version")
-                            if name and version:
-                                resolved_map[name.lower()] = version
+                    for pkg in lock_data.get("package", []):
+                        if isinstance(pkg, dict):
+                            p_name = pkg.get("name", "")
+                            p_ver = pkg.get("version", "")
+                            if p_name and p_ver:
+                                norm_pname = _pep503_normalize(p_name)
+                                p_source = pkg.get("source", {})
+                                is_editable_or_virtual = False
+                                if isinstance(p_source, dict):
+                                    if "virtual" in p_source or "editable" in p_source:
+                                        is_editable_or_virtual = True
+                                elif isinstance(p_source, str) and (
+                                    p_source.startswith("editable:") or p_source == "virtual"
+                                ):
+                                    is_editable_or_virtual = True
+
+                                is_self = (
+                                    project_name
+                                    and norm_pname == _pep503_normalize(project_name)
+                                ) or is_editable_or_virtual
+                                resolved_map[norm_pname] = str(p_ver)
+                                lock_packages.append({
+                                    "name": p_name,
+                                    "version": str(p_ver),
+                                    "norm_name": norm_pname,
+                                    "is_self": is_self,
+                                })
+                except (tomllib.TOMLDecodeError, OSError):
+                    pass
+            elif lockfile_name == "poetry.lock":
+                try:
+                    with open(lockfile_path, "rb") as f:
+                        lock_data = tomllib.load(f)
+                    for pkg in lock_data.get("package", []):
+                        if isinstance(pkg, dict):
+                            p_name = pkg.get("name")
+                            p_ver = pkg.get("version")
+                            if p_name and p_ver:
+                                norm_pname = _pep503_normalize(p_name)
+                                resolved_map[norm_pname] = str(p_ver)
+                                lock_packages.append({
+                                    "name": p_name,
+                                    "version": str(p_ver),
+                                    "norm_name": norm_pname,
+                                    "is_self": False,
+                                })
                 except (tomllib.TOMLDecodeError, OSError):
                     pass
             elif lockfile_name == "Pipfile.lock":
@@ -429,25 +568,53 @@ class PythonParser(BaseParser):
                             for name, details in lock_data[section].items():
                                 version = details.get("version", "").lstrip("=")
                                 if version:
-                                    resolved_map[name.lower()] = version
+                                    norm_pname = _pep503_normalize(name)
+                                    resolved_map[norm_pname] = version
+                                    lock_packages.append({
+                                        "name": name,
+                                        "version": version,
+                                        "norm_name": norm_pname,
+                                        "is_self": False,
+                                    })
                 except (json.JSONDecodeError, OSError):
                     pass
 
             for dep in dependencies:
-                if dep.name.lower() in resolved_map:
-                    dep.resolved_version = resolved_map[dep.name.lower()]
+                norm_dep_name = _pep503_normalize(dep.name)
+                if norm_dep_name in resolved_map:
+                    dep.resolved_version = resolved_map[norm_dep_name]
 
-            for pkg_name_lower, pkg_version in resolved_map.items():
-                if pkg_name_lower not in direct_dep_names:
+            for item in lock_packages:
+                norm_pname = item["norm_name"]
+                if item["is_self"]:
+                    existing_self = next(
+                        (d for d in dependencies if _pep503_normalize(d.name) == norm_pname),
+                        None,
+                    )
+                    if existing_self:
+                        existing_self.metadata["workspace_internal"] = True
+                    else:
+                        dependencies.append(
+                            Dependency(
+                                name=item["name"],
+                                version_spec=item["version"],
+                                resolved_version=item["version"],
+                                dep_type=DependencyType.PRODUCTION,
+                                extras=[],
+                                source=lockfile_name,
+                                metadata={"workspace_internal": True},
+                            )
+                        )
+                elif norm_pname not in direct_dep_norm_names:
                     dependencies.append(
                         Dependency(
-                            name=pkg_name_lower,
-                            version_spec=pkg_version,
-                            resolved_version=pkg_version,
+                            name=item["name"],
+                            version_spec=item["version"],
+                            resolved_version=item["version"],
                             dep_type=DependencyType.PRODUCTION,
                             extras=[],
                             source=lockfile_name,
-                            metadata={"transitive": True}
+                            metadata={"transitive": True},
                         )
                     )
 
