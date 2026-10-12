@@ -16,6 +16,7 @@ from zerogravity.commands import (
     dedup,
     doctor,
     heal,
+    history,
     init,
     outdated,
     scan,
@@ -49,6 +50,7 @@ app.command(name="outdated", help="[bold cyan]Check[/] package registries for av
 app.command(name="audit-security", help="[bold cyan]Audit[/] dependencies for known CVEs and security advisories.")(security.security_command)
 app.command(name="why", help="[bold cyan]Trace[/] one dependency's resolution, lockfile, versions, and system binary requirements.")(why.why_command)
 app.command(name="doctor", help="[bold cyan]Diagnose[/] your project — audit, scan, and offer to heal in one guided flow.")(doctor.doctor_command)
+app.add_typer(history.history_app, name="history", help="[bold cyan]Manage[/] local scan history.")
 
 
 # ── Version callback ────────────────────────────────────────────────────────

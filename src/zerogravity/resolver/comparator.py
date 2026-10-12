@@ -118,3 +118,27 @@ def compare_version(required_spec: str, installed_version: str) -> Severity:
         return Severity.WARNING
     else:
         return Severity.ERROR
+
+
+def get_candidate_grid(engine: str) -> list[str]:
+    """Generate candidate version grid for a given engine."""
+    eng = engine.lower()
+    if "python" in eng:
+        return [f"3.{m}.0" for m in range(0, 31)]
+    elif "node" in eng:
+        return [f"{m}.0.0" for m in range(0, 41)]
+    elif "rust" in eng:
+        return [f"1.{m}.0" for m in range(20, 90)]
+    elif "go" in eng:
+        return [f"1.{m}.0" for m in range(10, 30)]
+    else:
+        return [f"1.{m}.0" for m in range(0, 30)] + [f"{m}.0.0" for m in range(0, 30)]
+
+
+def specs_have_intersection(engine: str, spec1: str, spec2: str) -> bool:
+    """Return True if at least one candidate version satisfies both spec1 and spec2."""
+    grid = get_candidate_grid(engine)
+    for v in grid:
+        if compare_version(spec1, v) == Severity.OK and compare_version(spec2, v) == Severity.OK:
+            return True
+    return False

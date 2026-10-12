@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, List
 
 from zerogravity.parsers.base import ProjectManifest
 from zerogravity.resolver.binary_lookup import lookup_system_deps
-from zerogravity.resolver.comparator import compare_version
+from zerogravity.resolver.comparator import compare_version, specs_have_intersection
 from zerogravity.resolver.models import (
     Issue,
     IssueCategory,
@@ -113,48 +112,93 @@ def _check_missing_system_deps(
 
 def _check_cross_project_conflicts(manifests: List[ProjectManifest], snapshot: SystemSnapshot) -> List[Issue]:
     issues: List[Issue] = []
-    engine_reqs_by_project: Dict[str, Dict[Path, List[tuple[ProjectManifest, str]]]] = {}
+    engine_reqs_by_project: Dict[str, Dict[str, tuple[ProjectManifest, set[str]]]] = {}
 
     for manifest in manifests:
         if not manifest.engine_constraints:
             continue
-        proj_key = manifest.logical_project_path
+        proj_name = manifest.project_name or manifest.project_path.name
+        proj_key = f"{manifest.logical_project_path}::{proj_name}"
         for engine, spec in manifest.engine_constraints.items():
             if engine not in engine_reqs_by_project:
                 engine_reqs_by_project[engine] = {}
             if proj_key not in engine_reqs_by_project[engine]:
-                engine_reqs_by_project[engine][proj_key] = []
-            engine_reqs_by_project[engine][proj_key].append((manifest, spec))
+                engine_reqs_by_project[engine][proj_key] = (manifest, set())
+            engine_reqs_by_project[engine][proj_key][1].add(spec)
 
     for engine, projects_dict in engine_reqs_by_project.items():
-        # Sibling workspace packages belong to one logical project and do not conflict
-        if len(projects_dict) > 1:
-            project_specs = []
-            all_distinct_specs = set()
-            for proj_path, req_list in projects_dict.items():
-                specs = list({r[1] for r in req_list})
-                all_distinct_specs.update(specs)
-                project_specs.append((req_list[0][0], specs))
+        if len(projects_dict) < 2:
+            continue
 
-            if len(all_distinct_specs) > 1:
-                # Specs differ across distinct projects
-                msg_parts = [
-                    f"{m.project_name or m.project_path.name} needs {engine.capitalize()} {', '.join(specs)}"
-                    for m, specs in project_specs
-                ]
+        probe = snapshot.get_binary(engine)
+        installed_ver = probe.version if (probe and probe.installed and probe.version) else None
+
+        incompatible_pair: tuple[tuple[ProjectManifest, str], tuple[ProjectManifest, str]] | None = None
+        proj_items = list(projects_dict.values())
+        for i in range(len(proj_items)):
+            m1, specs1 = proj_items[i]
+            for j in range(i + 1, len(proj_items)):
+                m2, specs2 = proj_items[j]
+                for s1 in specs1:
+                    for s2 in specs2:
+                        has_overlap = specs_have_intersection(engine, s1, s2)
+                        installed_fails_one = False
+                        if installed_ver:
+                            ok1 = compare_version(s1, installed_ver) == Severity.OK
+                            ok2 = compare_version(s2, installed_ver) == Severity.OK
+                            if ok1 != ok2:
+                                installed_fails_one = True
+                        if not has_overlap or installed_fails_one:
+                            incompatible_pair = ((m1, s1), (m2, s2))
+                            break
+                    if incompatible_pair:
+                        break
+                if incompatible_pair:
+                    break
+            if incompatible_pair:
+                break
+
+        if incompatible_pair:
+            p1_info, p2_info = incompatible_pair
+            m1, _ = p1_info
+            m2, _ = p2_info
+
+            ordered_projects: list[tuple[ProjectManifest, list[str]]] = []
+            seen_projs: set[str] = set()
+            for m in [m1, m2]:
+                pk = f"{m.logical_project_path}::{m.project_name or m.project_path.name}"
+                if pk not in seen_projs and pk in projects_dict:
+                    seen_projs.add(pk)
+                    ordered_projects.append((projects_dict[pk][0], sorted(projects_dict[pk][1])))
+
+            for pk, (m, sps) in projects_dict.items():
+                if pk not in seen_projs:
+                    seen_projs.add(pk)
+                    ordered_projects.append((m, sorted(sps)))
+
+            msg_parts = [
+                f"{m.project_name or m.project_path.name} needs {engine.capitalize()} {', '.join(sps)}"
+                for m, sps in ordered_projects
+            ]
+
+            if len(msg_parts) > 3:
+                displayed = msg_parts[:3]
+                remainder = len(msg_parts) - 3
+                msg = f"{' but '.join(displayed)} and {remainder} more. Running both simultaneously may cause conflicts."
+            else:
                 msg = f"{' but '.join(msg_parts)}. Running both simultaneously may cause conflicts."
 
-                issues.append(Issue(
-                    severity=Severity.WARNING,
-                    category=IssueCategory.CROSS_PROJECT_CONFLICT,
-                    message=msg,
-                    source_project=str(project_specs[0][0].project_path),
-                    affected_binary=engine,
-                    expected="",
-                    actual="",
-                    remediation="Use version managers or isolated environments for each project.",
-                    metadata={}
-                ))
+            issues.append(Issue(
+                severity=Severity.WARNING,
+                category=IssueCategory.CROSS_PROJECT_CONFLICT,
+                message=msg,
+                source_project=str(m1.project_path),
+                affected_binary=engine,
+                expected="",
+                actual="",
+                remediation="Use version managers or isolated environments for each project.",
+                metadata={"incompatible_pair": [m1.project_name or m1.project_path.name, m2.project_name or m2.project_path.name]},
+            ))
 
     return issues
 
