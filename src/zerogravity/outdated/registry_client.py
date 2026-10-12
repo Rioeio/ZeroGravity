@@ -7,11 +7,10 @@ from __future__ import annotations
 import json
 import time
 import urllib.parse
-import urllib.request
 from pathlib import Path
 from typing import Any
 
-from zerogravity import __version__
+from zerogravity.net import request_json
 
 REGISTRY_CACHE_FILENAME = "registry_cache.json"
 DEFAULT_TTL_SECONDS = 3600  # 1 hour
@@ -38,6 +37,8 @@ class RegistryClient:
 
         self.ttl_seconds = ttl_seconds
         self.timeout = timeout
+        self.errors: list[str] = []
+        self.complete: bool = True
 
     def _ensure_dir(self) -> None:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -82,18 +83,14 @@ class RegistryClient:
         self._save_cache(cache)
 
     def _fetch_json(self, url: str) -> dict[str, Any] | None:
-        """Fetch JSON data from a URL with custom User-Agent and timeout."""
-        headers = {
-            "User-Agent": f"ZeroGravity/{__version__} (https://github.com/Rioeio/ZeroGravity)",
-            "Accept": "application/json",
-        }
-        req = urllib.request.Request(url, headers=headers)
+        """Fetch JSON data from a URL using shared net helper."""
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as response:
-                if response.status == 200:
-                    raw_data = response.read().decode("utf-8")
-                    return json.loads(raw_data)
-        except Exception:
+            data = request_json(url, method="GET", timeout=self.timeout)
+            if isinstance(data, dict):
+                return data
+        except Exception as err:
+            self.errors.append(f"Registry request failed for {url}: {err}")
+            self.complete = False
             return None
         return None
 

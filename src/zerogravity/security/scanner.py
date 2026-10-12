@@ -4,6 +4,7 @@ Security scanner integrating OSV.dev batch query and vulnerability advisory extr
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Any
 
@@ -14,6 +15,64 @@ from zerogravity.security.models import (
     VulnerabilitySeverity,
 )
 from zerogravity.security.osv_client import OSVClient
+
+
+def _cvss_roundup(val: float) -> float:
+    """Official CVSS v3.1 roundup function."""
+    int_input = round(val * 100000)
+    if int_input % 10000 == 0:
+        return int_input / 100000.0
+    return (math.floor(int_input / 10000) + 1) / 10.0
+
+
+def _compute_cvss_v3_score(vector: str) -> float | None:
+    """Compute CVSS v3.x base score using the official CVSS v3.1 specification formula."""
+    parts = dict(part.split(":", 1) for part in vector.split("/") if ":" in part)
+    cvss_ver = parts.get("CVSS", "")
+    if not (cvss_ver.startswith("3.0") or cvss_ver.startswith("3.1")):
+        return None
+
+    av_map = {"N": 0.85, "A": 0.62, "L": 0.55, "P": 0.20}
+    ac_map = {"L": 0.77, "H": 0.44}
+    ui_map = {"N": 0.85, "R": 0.62}
+    c_map = {"H": 0.56, "L": 0.22, "N": 0.0}
+    i_map = {"H": 0.56, "L": 0.22, "N": 0.0}
+    a_map = {"H": 0.56, "L": 0.22, "N": 0.0}
+
+    scope = parts.get("S")
+    if scope not in ("U", "C"):
+        return None
+
+    pr_code = parts.get("PR")
+    if scope == "U":
+        pr_map = {"N": 0.85, "L": 0.62, "H": 0.27}
+    else:
+        pr_map = {"N": 0.85, "L": 0.68, "H": 0.50}
+
+    try:
+        av = av_map[parts["AV"]]
+        ac = ac_map[parts["AC"]]
+        pr = pr_map[pr_code]  # type: ignore[index]
+        ui = ui_map[parts["UI"]]
+        c = c_map[parts["C"]]
+        i = i_map[parts["I"]]
+        a = a_map[parts["A"]]
+    except KeyError:
+        return None
+
+    iss = 1.0 - ((1.0 - c) * (1.0 - i) * (1.0 - a))
+    if scope == "U":
+        impact = 6.42 * iss
+    else:
+        impact = 7.52 * (iss - 0.029) - 3.25 * ((iss - 0.02) ** 15)
+
+    exploitability = 8.22 * av * ac * pr * ui
+
+    if impact <= 0:
+        return 0.0
+    if scope == "U":
+        return _cvss_roundup(min(impact + exploitability, 10.0))
+    return _cvss_roundup(min(1.08 * (impact + exploitability), 10.0))
 
 
 def _parse_severity(vuln: dict[str, Any]) -> tuple[VulnerabilitySeverity, str | None]:
@@ -42,15 +101,21 @@ def _parse_severity(vuln: dict[str, Any]) -> tuple[VulnerabilitySeverity, str | 
 
     # Fallback to CVSS score calculation if available
     if cvss_score:
-        match = re.search(r"/S:[U|C]/C:[N|L|H]/I:[N|L|H]/A:[N|L|H]", cvss_score)
-        if match:
-            # Simple heuristic
-            if "C:H" in cvss_score and "I:H" in cvss_score and "A:H" in cvss_score:
-                return VulnerabilitySeverity.CRITICAL, cvss_score
-            elif "C:H" in cvss_score or "I:H" in cvss_score or "A:H" in cvss_score:
-                return VulnerabilitySeverity.HIGH, cvss_score
+        if cvss_score.startswith("CVSS:4.0") or "/VC:" in cvss_score:
+            return VulnerabilitySeverity.UNKNOWN, cvss_score
 
-    return VulnerabilitySeverity.HIGH if raw_sev else VulnerabilitySeverity.UNKNOWN, cvss_score
+        base_score = _compute_cvss_v3_score(cvss_score)
+        if base_score is not None:
+            if base_score >= 9.0:
+                return VulnerabilitySeverity.CRITICAL, cvss_score
+            elif base_score >= 7.0:
+                return VulnerabilitySeverity.HIGH, cvss_score
+            elif base_score >= 4.0:
+                return VulnerabilitySeverity.MEDIUM, cvss_score
+            elif base_score >= 0.1:
+                return VulnerabilitySeverity.LOW, cvss_score
+
+    return VulnerabilitySeverity.UNKNOWN, cvss_score
 
 
 def _find_cve_alias(aliases: list[str]) -> str | None:
@@ -67,7 +132,7 @@ def scan_vulnerabilities(
     osv_client: OSVClient | None = None,
 ) -> SecurityReport:
     """
-    Batch query OSV.dev for known vulnerabilities across all project dependencies.
+    Batch query OSV.dev for known vulnerabilities across resolved project dependencies.
     """
     client = osv_client or OSVClient()
 
@@ -75,6 +140,7 @@ def scan_vulnerabilities(
     queries: list[dict[str, Any]] = []
 
     seen_project_deps: set[tuple[str, str, str]] = set()
+    unresolved_count = 0
 
     for manifest in manifests:
         ecosystem_name = (
@@ -92,7 +158,12 @@ def scan_vulnerabilities(
             if dep.metadata.get("workspace_internal"):
                 continue
 
-            version = dep.resolved_version or dep.version_spec
+            # Query only resolved versions; range-only specs are counted as unresolved
+            if not dep.resolved_version:
+                unresolved_count += 1
+                continue
+
+            version = dep.resolved_version
             if not version or version in ("*", "latest"):
                 continue
 
@@ -116,7 +187,13 @@ def scan_vulnerabilities(
             })
 
     if not queries:
-        return SecurityReport(advisories=[], scanned_packages=0)
+        return SecurityReport(
+            advisories=[],
+            scanned_packages=0,
+            unresolved_packages=unresolved_count,
+            errors=list(client.errors),
+            complete=client.complete,
+        )
 
     batch_results = client.query_batch(queries, offline=offline)
     advisories: list[VulnerabilityAdvisory] = []
@@ -152,4 +229,7 @@ def scan_vulnerabilities(
     return SecurityReport(
         advisories=advisories,
         scanned_packages=len(queries),
+        unresolved_packages=unresolved_count,
+        errors=list(client.errors),
+        complete=client.complete,
     )

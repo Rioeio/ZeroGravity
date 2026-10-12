@@ -1,29 +1,29 @@
 """
-OSV.dev API batch client with local caching and resilient error handling.
+OSV.dev API batch client with local caching, pagination, hydration, and resilient error handling.
 """
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 from typing import Any
 
-from zerogravity import __version__
+from zerogravity import net
 
 OSV_BATCH_ENDPOINT = "https://api.osv.dev/v1/querybatch"
+OSV_VULN_ENDPOINT = "https://api.osv.dev/v1/vulns"
 OSV_CACHE_FILENAME = "osv_cache.json"
 DEFAULT_TTL_SECONDS = 3600  # 1 hour
 DEFAULT_TIMEOUT_SECONDS = 5
 MAX_BATCH_SIZE = 500
+MAX_PAGES = 10
+HYDRATION_WORKERS = 8
 
 
 class OSVClient:
-    """
-    Client for batch querying the OSV.dev vulnerability database.
-    """
+    """Client for batch querying and hydrating records from the OSV.dev vulnerability database."""
 
     def __init__(
         self,
@@ -40,6 +40,8 @@ class OSVClient:
 
         self.ttl_seconds = ttl_seconds
         self.timeout = timeout
+        self.errors: list[str] = []
+        self.complete: bool = True
 
     def _ensure_dir(self) -> None:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -61,15 +63,25 @@ class OSVClient:
         except OSError:
             pass
 
+    def _hydrate_vuln(self, vuln_id: str) -> dict[str, Any] | None:
+        """Fetch full vulnerability record for a single vulnerability ID."""
+        url = f"{OSV_VULN_ENDPOINT}/{vuln_id}"
+        try:
+            data = net.request_json(url, method="GET", timeout=self.timeout)
+            if isinstance(data, dict):
+                return data
+        except (net.NetworkError, Exception) as err:
+            self.errors.append(f"Failed to hydrate {vuln_id}: {err}")
+            self.complete = False
+        return None
+
     def query_batch(
         self,
         queries: list[dict[str, Any]],
         offline: bool = False,
     ) -> list[list[dict[str, Any]]]:
         """
-        Query OSV.dev in batches for a list of {'package': {'name': str, 'ecosystem': str}, 'version': str}.
-
-        Returns a list of vulnerability lists corresponding 1:1 to queries.
+        Query OSV.dev in batches, follow pagination tokens, and hydrate full vulnerability records.
         """
         if not queries:
             return []
@@ -99,47 +111,142 @@ class OSVClient:
         if not queries_to_fetch or offline:
             return results
 
-        # Process in chunks of MAX_BATCH_SIZE
+        vulns_by_orig_idx: dict[int, list[dict[str, Any]]] = {idx: [] for idx, _ in queries_to_fetch}
+
+        # Process queries in chunks of MAX_BATCH_SIZE
         for i in range(0, len(queries_to_fetch), MAX_BATCH_SIZE):
             chunk = queries_to_fetch[i : i + MAX_BATCH_SIZE]
             chunk_queries = [q for _, q in chunk]
 
-            payload = json.dumps({"queries": chunk_queries}).encode("utf-8")
-            headers = {
-                "User-Agent": f"ZeroGravity/{__version__} (https://github.com/Rioeio/ZeroGravity)",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            }
-            req = urllib.request.Request(
-                OSV_BATCH_ENDPOINT,
-                data=payload,
-                headers=headers,
-                method="POST",
-            )
-
             try:
-                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                    if resp.status == 200:
-                        raw_body = resp.read().decode("utf-8")
-                        body_data = json.loads(raw_body)
-                        chunk_results = body_data.get("results", [])
-
-                        for (orig_idx, query_obj), res_item in zip(chunk, chunk_results, strict=False):
-                            vulns = res_item.get("vulns", []) if isinstance(res_item, dict) else []
-                            results[orig_idx] = vulns
-
-                            # Cache response
-                            pkg_name = query_obj.get("package", {}).get("name", "")
-                            ecosystem = query_obj.get("package", {}).get("ecosystem", "")
-                            version = query_obj.get("version", "")
-                            cache_key = f"{ecosystem}:{pkg_name.lower()}:{version}"
-                            cache[cache_key] = {
-                                "vulns": vulns,
-                                "timestamp": now,
-                            }
-            except Exception:
-                # Network failures degrade gracefully: keep empty results
+                body_data = net.request_json(
+                    OSV_BATCH_ENDPOINT,
+                    method="POST",
+                    data={"queries": chunk_queries},
+                    timeout=self.timeout,
+                )
+            except (net.NetworkError, Exception) as err:
+                self.errors.append(f"OSV batch query failed: {err}")
+                self.complete = False
                 continue
+
+            if not isinstance(body_data, dict):
+                continue
+
+            chunk_results = body_data.get("results", [])
+            if len(chunk) != len(chunk_results):
+                raise ValueError(
+                    f"OSV batch response length mismatch: expected {len(chunk)}, got {len(chunk_results)}"
+                )
+
+            # Collect stubs and identify queries needing pagination
+            paginated_queries: list[tuple[int, dict[str, Any], str]] = []
+            for (orig_idx, query_obj), res_item in zip(chunk, chunk_results):
+                if not isinstance(res_item, dict):
+                    continue
+                vulns = res_item.get("vulns", [])
+                if isinstance(vulns, list):
+                    vulns_by_orig_idx[orig_idx].extend(vulns)
+                token = res_item.get("next_page_token")
+                if token and isinstance(token, str):
+                    paginated_queries.append((orig_idx, query_obj, token))
+
+            page_round = 0
+            while paginated_queries and page_round < MAX_PAGES:
+                page_round += 1
+                next_batch_queries = [
+                    {**q_obj, "page_token": tok}
+                    for _, q_obj, tok in paginated_queries
+                ]
+                try:
+                    page_body = net.request_json(
+                        OSV_BATCH_ENDPOINT,
+                        method="POST",
+                        data={"queries": next_batch_queries},
+                        timeout=self.timeout,
+                    )
+                except (net.NetworkError, Exception) as err:
+                    self.errors.append(f"OSV paginated query failed: {err}")
+                    self.complete = False
+                    break
+
+                if not isinstance(page_body, dict):
+                    break
+
+                page_results = page_body.get("results", [])
+                if len(paginated_queries) != len(page_results):
+                    raise ValueError(
+                        f"OSV batch response length mismatch: expected {len(paginated_queries)}, got {len(page_results)}"
+                    )
+
+                next_paginated_queries: list[tuple[int, dict[str, Any], str]] = []
+                for (orig_idx, q_obj, _), res_item in zip(paginated_queries, page_results):
+                    if not isinstance(res_item, dict):
+                        continue
+                    vulns = res_item.get("vulns", [])
+                    if isinstance(vulns, list):
+                        vulns_by_orig_idx[orig_idx].extend(vulns)
+                    token = res_item.get("next_page_token")
+                    if token and isinstance(token, str):
+                        next_paginated_queries.append((orig_idx, q_obj, token))
+                paginated_queries = next_paginated_queries
+
+        # Collect unique vuln IDs needing hydration
+        stubs_to_hydrate: dict[str, str] = {}  # vuln_id -> modified
+        for vulns in vulns_by_orig_idx.values():
+            for v in vulns:
+                if isinstance(v, dict) and "id" in v:
+                    vid = v["id"]
+                    mod = v.get("modified", "")
+                    stubs_to_hydrate[vid] = mod
+
+        hydrated_cache = cache.setdefault("__hydrated__", {})
+        ids_to_fetch = [
+            vid
+            for vid, mod in stubs_to_hydrate.items()
+            if vid not in hydrated_cache or hydrated_cache[vid].get("modified") != mod
+        ]
+
+        if ids_to_fetch:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=HYDRATION_WORKERS) as executor:
+                future_to_id = {
+                    executor.submit(self._hydrate_vuln, vid): vid
+                    for vid in ids_to_fetch
+                }
+                for future in concurrent.futures.as_completed(future_to_id):
+                    vid = future_to_id[future]
+                    try:
+                        record = future.result()
+                        if record is not None:
+                            hydrated_cache[vid] = {
+                                "modified": stubs_to_hydrate.get(vid, ""),
+                                "data": record,
+                            }
+                    except Exception as err:
+                        self.errors.append(f"Error hydrating {vid}: {err}")
+                        self.complete = False
+
+        # Build final hydrated results and update cache
+        for orig_idx, query_obj in queries_to_fetch:
+            raw_stubs = vulns_by_orig_idx.get(orig_idx, [])
+            hydrated_list: list[dict[str, Any]] = []
+            for stub in raw_stubs:
+                vid = stub.get("id")
+                if vid and vid in hydrated_cache:
+                    hydrated_list.append(hydrated_cache[vid]["data"])
+                else:
+                    hydrated_list.append(stub)
+
+            results[orig_idx] = hydrated_list
+
+            pkg_name = query_obj.get("package", {}).get("name", "")
+            ecosystem = query_obj.get("package", {}).get("ecosystem", "")
+            version = query_obj.get("version", "")
+            cache_key = f"{ecosystem}:{pkg_name.lower()}:{version}"
+            cache[cache_key] = {
+                "vulns": hydrated_list,
+                "timestamp": now,
+            }
 
         self._save_cache(cache)
         return results

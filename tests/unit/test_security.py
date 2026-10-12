@@ -19,44 +19,34 @@ runner = CliRunner()
 
 
 def test_osv_query_batch_mock(tmp_path: Path):
-    """Test OSV.dev batch query and vulnerability advisory parsing."""
+    """Test OSV.dev batch query and vulnerability advisory parsing with real-shape fixtures."""
+    fixtures_dir = Path(__file__).resolve().parent.parent / "data" / "osv"
+    stub_data = json.loads((fixtures_dir / "querybatch_stub.json").read_text(encoding="utf-8"))
+    full_data = json.loads((fixtures_dir / "vuln_ghsa_p6mc.json").read_text(encoding="utf-8"))
+
     client = OSVClient(cache_file=tmp_path / "osv_cache.json")
 
     queries = [
         {"package": {"name": "lodash", "ecosystem": "npm"}, "version": "4.17.15"},
     ]
 
-    mock_response_data = {
-        "results": [
-            {
-                "vulns": [
-                    {
-                        "id": "GHSA-p6mc-m468-83gw",
-                        "summary": "Prototype Pollution in lodash",
-                        "aliases": ["CVE-2020-8203"],
-                        "database_specific": {
-                            "severity": "HIGH",
-                        },
-                        "severity": [
-                            {"type": "CVSS_V3", "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"}
-                        ],
-                    }
-                ]
-            }
-        ]
-    }
+    def fake_urlopen(req, *args, **kwargs):
+        url = req.full_url if hasattr(req, "full_url") else str(req)
+        mock_resp = MagicMock()
+        mock_resp.status = 200
+        if "querybatch" in url:
+            mock_resp.read.return_value = json.dumps(stub_data).encode("utf-8")
+        else:
+            mock_resp.read.return_value = json.dumps(full_data).encode("utf-8")
+        mock_resp.__enter__.return_value = mock_resp
+        return mock_resp
 
-    mock_resp = MagicMock()
-    mock_resp.status = 200
-    mock_resp.read.return_value = json.dumps(mock_response_data).encode("utf-8")
-    mock_resp.__enter__.return_value = mock_resp
-
-    with patch("urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
         results = client.query_batch(queries)
         assert len(results) == 1
         assert len(results[0]) == 1
         assert results[0][0]["id"] == "GHSA-p6mc-m468-83gw"
-        mock_urlopen.assert_called_once()
+        assert results[0][0]["summary"] == "Prototype Pollution in lodash"
 
 
 def test_vulnerable_fixture_surfaces_advisory(tmp_path: Path):

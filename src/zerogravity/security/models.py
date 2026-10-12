@@ -61,6 +61,9 @@ class SecurityReport:
     """Aggregated vulnerability findings across scanned project manifests."""
     advisories: list[VulnerabilityAdvisory] = field(default_factory=list)
     scanned_packages: int = 0
+    unresolved_packages: int = 0
+    errors: list[str] = field(default_factory=list)
+    complete: bool = True
 
     @property
     def critical_count(self) -> int:
