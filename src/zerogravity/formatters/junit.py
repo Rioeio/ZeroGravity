@@ -34,7 +34,13 @@ def format_junit(
 
     if not report.issues:
         # One passing testcase representing clean audit
-        tc = ET.SubElement(suite_issues, "testcase", classname="zerogravity.audit", name="dependency_checks_clean")
+        ET.SubElement(
+            suite_issues,
+            "testcase",
+            classname="zerogravity.audit",
+            name="dependency_checks_clean",
+            time="0.0",
+        )
         issue_tests += 1
     else:
         for idx, issue in enumerate(report.issues, 1):
@@ -45,6 +51,7 @@ def format_junit(
                 "testcase",
                 classname=f"zerogravity.audit.{issue.category.value}",
                 name=test_name,
+                time="0.0",
             )
 
             if issue.severity == Severity.ERROR:
@@ -70,6 +77,7 @@ def format_junit(
     suite_issues.set("failures", str(issue_failures))
     suite_issues.set("errors", str(issue_errors))
     suite_issues.set("skipped", "0")
+    suite_issues.set("time", "0.0")
 
     total_tests += issue_tests
     total_failures += issue_failures
@@ -83,7 +91,13 @@ def format_junit(
         sec_errors = 0
 
         if not security_report.advisories:
-            tc = ET.SubElement(suite_sec, "testcase", classname="zerogravity.security", name="vulnerability_checks_clean")
+            ET.SubElement(
+                suite_sec,
+                "testcase",
+                classname="zerogravity.security",
+                name="vulnerability_checks_clean",
+                time="0.0",
+            )
             sec_tests += 1
         else:
             for idx, adv in enumerate(security_report.advisories, 1):
@@ -94,6 +108,7 @@ def format_junit(
                     "testcase",
                     classname="zerogravity.security",
                     name=test_name,
+                    time="0.0",
                 )
 
                 if adv.severity in (VulnerabilitySeverity.CRITICAL, VulnerabilitySeverity.HIGH):
@@ -119,6 +134,7 @@ def format_junit(
         suite_sec.set("failures", str(sec_failures))
         suite_sec.set("errors", str(sec_errors))
         suite_sec.set("skipped", "0")
+        suite_sec.set("time", "0.0")
 
         total_tests += sec_tests
         total_failures += sec_failures
@@ -128,6 +144,7 @@ def format_junit(
     testsuites_el.set("failures", str(total_failures))
     testsuites_el.set("errors", str(total_errors))
     testsuites_el.set("skipped", "0")
+    testsuites_el.set("time", "0.0")
 
     xml_str = ET.tostring(testsuites_el, encoding="utf-8")
     parsed = minidom.parseString(xml_str)

@@ -87,41 +87,12 @@ def test_sarif_formatter_structure_and_schema():
     assert sec_res["level"] == "error"
     assert "CVE-2020-8203" in sec_res["message"]["text"]
 
-    # Official jsonschema validation if jsonschema is installed
-    try:
-        import jsonschema
-        # Minimal SARIF 2.1.0 JSON schema draft check
-        schema = {
-            "$schema": "http://json-schema.org/draft-07/schema#",
-            "type": "object",
-            "required": ["$schema", "version", "runs"],
-            "properties": {
-                "version": {"type": "string", "enum": ["2.1.0"]},
-                "runs": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "required": ["tool", "results"],
-                        "properties": {
-                            "tool": {
-                                "type": "object",
-                                "required": ["driver"],
-                                "properties": {
-                                    "driver": {
-                                        "type": "object",
-                                        "required": ["name", "rules"],
-                                    }
-                                },
-                            },
-                            "results": {"type": "array"},
-                        },
-                    },
-                },
-            },
-        }
+    # Official jsonschema validation against OASIS SARIF 2.1.0 schema
+    import jsonschema
+    schema_path = Path(__file__).parent.parent / "test_fixtures" / "sarif-schema-2.1.0.json"
+    if schema_path.exists():
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
         jsonschema.validate(instance=doc, schema=schema)
-    except ImportError:
-        pass
 
 
 def test_junit_formatter_structure_and_xml_parsing():

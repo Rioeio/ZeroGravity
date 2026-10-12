@@ -5,6 +5,7 @@ SARIF 2.1.0 Formatter for GitHub Code Scanning and OASIS compliance.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from zerogravity import __version__
@@ -28,6 +29,7 @@ RULE_DEFINITIONS: dict[str, dict[str, Any]] = {
         "id": "ZG001",
         "name": "MissingSystemDependency",
         "shortDescription": {"text": "A required system binary dependency is not installed on the host machine."},
+        "fullDescription": {"text": "A required system binary dependency is not installed on the host machine."},
         "defaultConfiguration": {"level": "warning"},
         "helpUri": "https://github.com/Rioeio/ZeroGravity",
     },
@@ -35,6 +37,7 @@ RULE_DEFINITIONS: dict[str, dict[str, Any]] = {
         "id": "ZG002",
         "name": "EngineConstraintViolation",
         "shortDescription": {"text": "Project engine constraint is not satisfied by the installed runtime version."},
+        "fullDescription": {"text": "Project engine constraint is not satisfied by the installed runtime version."},
         "defaultConfiguration": {"level": "error"},
         "helpUri": "https://github.com/Rioeio/ZeroGravity",
     },
@@ -42,6 +45,7 @@ RULE_DEFINITIONS: dict[str, dict[str, Any]] = {
         "id": "ZG003",
         "name": "CrossProjectConflict",
         "shortDescription": {"text": "Conflicting runtime engine requirements across concurrently scanned projects."},
+        "fullDescription": {"text": "Conflicting runtime engine requirements across concurrently scanned projects."},
         "defaultConfiguration": {"level": "warning"},
         "helpUri": "https://github.com/Rioeio/ZeroGravity",
     },
@@ -49,6 +53,7 @@ RULE_DEFINITIONS: dict[str, dict[str, Any]] = {
         "id": "ZG004",
         "name": "LockfileMissing",
         "shortDescription": {"text": "No package lockfile was found for reproducible dependency installation."},
+        "fullDescription": {"text": "No package lockfile was found for reproducible dependency installation."},
         "defaultConfiguration": {"level": "note"},
         "helpUri": "https://github.com/Rioeio/ZeroGravity",
     },
@@ -56,6 +61,7 @@ RULE_DEFINITIONS: dict[str, dict[str, Any]] = {
         "id": "ZG005",
         "name": "MissingBinary",
         "shortDescription": {"text": "A standard development binary is missing from PATH."},
+        "fullDescription": {"text": "A standard development binary is missing from PATH."},
         "defaultConfiguration": {"level": "warning"},
         "helpUri": "https://github.com/Rioeio/ZeroGravity",
     },
@@ -63,6 +69,7 @@ RULE_DEFINITIONS: dict[str, dict[str, Any]] = {
         "id": "ZG-SEC-CRITICAL",
         "name": "CriticalSecurityVulnerability",
         "shortDescription": {"text": "Critical severity security vulnerability detected in package dependency."},
+        "fullDescription": {"text": "Critical severity security vulnerability detected in package dependency."},
         "defaultConfiguration": {"level": "error"},
         "helpUri": "https://osv.dev",
     },
@@ -70,6 +77,7 @@ RULE_DEFINITIONS: dict[str, dict[str, Any]] = {
         "id": "ZG-SEC-HIGH",
         "name": "HighSecurityVulnerability",
         "shortDescription": {"text": "High severity security vulnerability detected in package dependency."},
+        "fullDescription": {"text": "High severity security vulnerability detected in package dependency."},
         "defaultConfiguration": {"level": "error"},
         "helpUri": "https://osv.dev",
     },
@@ -77,6 +85,7 @@ RULE_DEFINITIONS: dict[str, dict[str, Any]] = {
         "id": "ZG-SEC-MEDIUM",
         "name": "MediumSecurityVulnerability",
         "shortDescription": {"text": "Medium severity security vulnerability detected in package dependency."},
+        "fullDescription": {"text": "Medium severity security vulnerability detected in package dependency."},
         "defaultConfiguration": {"level": "warning"},
         "helpUri": "https://osv.dev",
     },
@@ -84,6 +93,7 @@ RULE_DEFINITIONS: dict[str, dict[str, Any]] = {
         "id": "ZG-SEC-LOW",
         "name": "LowSecurityVulnerability",
         "shortDescription": {"text": "Low severity security vulnerability detected in package dependency."},
+        "fullDescription": {"text": "Low severity security vulnerability detected in package dependency."},
         "defaultConfiguration": {"level": "note"},
         "helpUri": "https://osv.dev",
     },
@@ -113,10 +123,16 @@ def _vulnerability_severity_to_sarif(severity: VulnerabilitySeverity) -> tuple[s
 
 
 def _format_location(project_path_str: str) -> list[dict[str, Any]]:
-    """Format artifact location for SARIF result."""
-    uri = project_path_str.replace("\\", "/")
-    if not uri:
+    """Format artifact location for SARIF result as RFC 3986 URI."""
+    if not project_path_str:
         uri = "."
+    else:
+        p = Path(project_path_str)
+        if p.is_absolute():
+            uri = p.as_uri()
+        else:
+            uri = p.as_posix()
+
     return [
         {
             "physicalLocation": {
@@ -139,7 +155,7 @@ def format_sarif(
     """
     Generate valid SARIF 2.1.0 JSON string from resolution and security reports.
     """
-    results: list[dict[str, Any]] = []
+    raw_results: list[dict[str, Any]] = []
     used_rule_ids: set[str] = set()
 
     # 1. Map ResolutionReport issues
@@ -151,7 +167,7 @@ def format_sarif(
         used_rule_ids.add(rule_id)
         level = _severity_to_sarif_level(issue.severity)
 
-        results.append({
+        raw_results.append({
             "ruleId": rule_id,
             "level": level,
             "message": {
@@ -169,7 +185,7 @@ def format_sarif(
             cve_str = f" ({adv.cve_id})" if adv.cve_id else ""
             msg = f"{adv.package_name}@{adv.installed_version} has {adv.severity.value} vulnerability {adv.id}{cve_str}: {adv.summary}"
 
-            results.append({
+            raw_results.append({
                 "ruleId": rule_id,
                 "level": level,
                 "message": {
@@ -187,6 +203,13 @@ def format_sarif(
     if not rules:
         # Include default rule definition if no issues were reported
         rules = list(RULE_DEFINITIONS.values())[:1]
+
+    rule_id_to_index = {rule["id"]: idx for idx, rule in enumerate(rules)}
+
+    results: list[dict[str, Any]] = []
+    for res in raw_results:
+        res["ruleIndex"] = rule_id_to_index.get(res["ruleId"], 0)
+        results.append(res)
 
     invocations: list[dict[str, Any]] = []
     is_successful = True
@@ -221,6 +244,7 @@ def format_sarif(
                     "driver": {
                         "name": "ZeroGravity",
                         "version": __version__,
+                        "semanticVersion": __version__,
                         "informationUri": "https://github.com/Rioeio/ZeroGravity",
                         "rules": rules,
                     }
