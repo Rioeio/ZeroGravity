@@ -1,67 +1,90 @@
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from zerogravity.parsers.base import Ecosystem, ProjectManifest
+from zerogravity.state import (
+    atomic_write_json,
+    ensure_state_dir,
+    file_lock,
+    get_lock_path,
+    get_state_dir,
+    load_json,
+)
 
 logger = logging.getLogger(__name__)
 
-class ScanHistoryManager:
-    """Manages the persistence and retrieval of project scan history."""
 
-    def __init__(self) -> None:
-        self.history_dir = Path.home() / ".zerogravity"
+class ScanHistoryManager:
+    """Manages persistence and retrieval of project scan history."""
+
+    def __init__(self, history_dir: Path | None = None, max_entries: int | None = None) -> None:
+        if history_dir is not None:
+            self.history_dir = Path(history_dir)
+        else:
+            self.history_dir = get_state_dir()
         self.history_file = self.history_dir / "scan_history.json"
+        self.lock_file = get_lock_path(self.history_file)
+
+        if max_entries is not None:
+            self.max_entries = max_entries
+        else:
+            try:
+                from zerogravity.config import load_config
+                self.max_entries = load_config().history_max_entries
+            except Exception:
+                self.max_entries = 1000
 
     def _ensure_dir(self) -> None:
-        self.history_dir.mkdir(parents=True, exist_ok=True)
+        ensure_state_dir(self.history_dir)
 
     def save_manifests(self, manifests: list[ProjectManifest]) -> None:
-        """Stores serialized manifest info."""
+        """Stores serialized manifest info with lock and bounded capacity."""
         self._ensure_dir()
+        with file_lock(self.lock_file):
+            current_history: dict[str, Any] = load_json(self.history_file, default={})
+            if not isinstance(current_history, dict):
+                current_history = {}
 
-        current_history = {}
-        if self.history_file.exists():
-            try:
-                with open(self.history_file, "r", encoding="utf-8") as f:
-                    current_history = json.load(f)
-            except json.JSONDecodeError:
-                pass
+            now_str = datetime.now().isoformat()
+            for manifest in manifests:
+                path_str = str(manifest.project_path)
+                current_history[path_str] = {
+                    "project_path": path_str,
+                    "project_name": manifest.project_name,
+                    "ecosystem": manifest.ecosystem.value if manifest.ecosystem else Ecosystem.UNKNOWN.value,
+                    "engine_constraints": manifest.engine_constraints,
+                    "dependencies_summary": len(manifest.dependencies),
+                    "timestamp": now_str,
+                }
 
-        now_str = datetime.now().isoformat()
-        for manifest in manifests:
-            path_str = str(manifest.project_path)
-            current_history[path_str] = {
-                "project_path": path_str,
-                "project_name": manifest.project_name,
-                "ecosystem": manifest.ecosystem.value if manifest.ecosystem else Ecosystem.UNKNOWN.value,
-                "engine_constraints": manifest.engine_constraints,
-                "dependencies_summary": len(manifest.dependencies),
-                "timestamp": now_str
-            }
+            if len(current_history) > self.max_entries:
+                sorted_items = sorted(
+                    current_history.items(),
+                    key=lambda item: str(item[1].get("timestamp", "")) if isinstance(item[1], dict) else "",
+                )
+                current_history = dict(sorted_items[-self.max_entries:])
 
-        with open(self.history_file, "w", encoding="utf-8") as f:
-            json.dump(current_history, f, indent=2)
+            atomic_write_json(self.history_file, current_history)
 
     def load_recent_manifests(self, max_age_days: int = 30) -> list[ProjectManifest]:
         """Loads active historical project manifests from disk."""
         if not self.history_file.exists():
             return []
 
-        try:
-            with open(self.history_file, "r", encoding="utf-8") as f:
-                history_data = json.load(f)
-        except json.JSONDecodeError:
+        history_data = load_json(self.history_file, default={})
+        if not isinstance(history_data, dict):
             return []
 
         cutoff = datetime.now() - timedelta(days=max_age_days)
         manifests = []
 
         for path_str, data in history_data.items():
+            if not isinstance(data, dict):
+                continue
             project_path = Path(path_str)
             if not project_path.exists() or not project_path.is_dir():
                 continue
@@ -82,12 +105,12 @@ class ScanHistoryManager:
                 project_path=project_path,
                 project_name=data.get("project_name", ""),
                 ecosystem=Ecosystem(data.get("ecosystem", Ecosystem.UNKNOWN.value)),
-                dependencies=[],  # We don't store full deps in history
+                dependencies=[],
                 engine_constraints=data.get("engine_constraints", {}),
                 lockfile_present=False,
                 lockfile_path=None,
                 manifest_files=[],
-                metadata={}
+                metadata={},
             )
             manifests.append(manifest)
 
@@ -97,29 +120,25 @@ class ScanHistoryManager:
         """Return all scan history entries."""
         if not self.history_file.exists():
             return {}
-        try:
-            with open(self.history_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                return data if isinstance(data, dict) else {}
-        except (json.JSONDecodeError, OSError):
-            return {}
+        data = load_json(self.history_file, default={})
+        return data if isinstance(data, dict) else {}
 
     def clear_history(self, path: Path | str | None = None) -> None:
         """Resets history file or removes a single project entry."""
         if not self.history_file.exists():
             return
 
-        if path is None:
-            try:
-                self.history_file.unlink()
-            except OSError:
-                pass
-            return
+        self._ensure_dir()
+        with file_lock(self.lock_file):
+            if path is None:
+                try:
+                    self.history_file.unlink()
+                except OSError:
+                    pass
+                return
 
-        target_path_str = str(Path(path).resolve())
-        try:
-            with open(self.history_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            target_path_str = str(Path(path).resolve())
+            data = load_json(self.history_file, default={})
             if isinstance(data, dict):
                 keys_to_remove = [
                     k for k in data
@@ -127,7 +146,4 @@ class ScanHistoryManager:
                 ]
                 for k in keys_to_remove:
                     del data[k]
-                with open(self.history_file, "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=2)
-        except (json.JSONDecodeError, OSError):
-            pass
+                atomic_write_json(self.history_file, data)

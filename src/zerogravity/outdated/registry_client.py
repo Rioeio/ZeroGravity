@@ -4,13 +4,20 @@ Registry client for querying npm and PyPI package metadata with local TTL cachin
 
 from __future__ import annotations
 
-import json
 import time
 import urllib.parse
 from pathlib import Path
 from typing import Any
 
 from zerogravity.net import request_json
+from zerogravity.state import (
+    atomic_write_json,
+    ensure_state_dir,
+    file_lock,
+    get_lock_path,
+    get_state_dir,
+    load_json,
+)
 
 REGISTRY_CACHE_FILENAME = "registry_cache.json"
 DEFAULT_TTL_SECONDS = 3600  # 1 hour
@@ -32,33 +39,26 @@ class RegistryClient:
             self.cache_file = Path(cache_file)
             self.cache_dir = self.cache_file.parent
         else:
-            self.cache_dir = Path.home() / ".zerogravity"
+            self.cache_dir = get_state_dir()
             self.cache_file = self.cache_dir / REGISTRY_CACHE_FILENAME
 
+        self.lock_file = get_lock_path(self.cache_file)
         self.ttl_seconds = ttl_seconds
         self.timeout = timeout
         self.errors: list[str] = []
         self.complete: bool = True
 
     def _ensure_dir(self) -> None:
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        ensure_state_dir(self.cache_dir)
 
     def _load_cache(self) -> dict[str, Any]:
-        if not self.cache_file.exists():
-            return {}
-        try:
-            with open(self.cache_file, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, OSError):
-            return {}
+        data = load_json(self.cache_file, default={})
+        return data if isinstance(data, dict) else {}
 
     def _save_cache(self, data: dict[str, Any]) -> None:
         self._ensure_dir()
-        try:
-            with open(self.cache_file, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
-        except OSError:
-            pass
+        with file_lock(self.lock_file):
+            atomic_write_json(self.cache_file, data)
 
     def _get_cached_version(self, cache_key: str, offline: bool) -> tuple[str | None, bool]:
         """
@@ -75,12 +75,16 @@ class RegistryClient:
         return None, False
 
     def _cache_version(self, cache_key: str, version: str) -> None:
-        cache = self._load_cache()
-        cache[cache_key] = {
-            "version": version,
-            "timestamp": time.time(),
-        }
-        self._save_cache(cache)
+        self._ensure_dir()
+        with file_lock(self.lock_file):
+            cache = load_json(self.cache_file, default={})
+            if not isinstance(cache, dict):
+                cache = {}
+            cache[cache_key] = {
+                "version": version,
+                "timestamp": time.time(),
+            }
+            atomic_write_json(self.cache_file, cache)
 
     def _fetch_json(self, url: str) -> dict[str, Any] | None:
         """Fetch JSON data from a URL using shared net helper."""

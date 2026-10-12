@@ -22,6 +22,7 @@ from zerogravity.commands import (
     outdated,
     scan,
     security,
+    state_cmd,
     status,
     why,
 )
@@ -53,6 +54,7 @@ app.command(name="why", help="[bold cyan]Trace[/] one dependency's resolution, l
 app.command(name="doctor", help="[bold cyan]Diagnose[/] your project — audit, scan, and offer to heal in one guided flow.")(doctor.doctor_command)
 app.add_typer(history.history_app, name="history", help="[bold cyan]Manage[/] local scan history.")
 app.add_typer(config_cmd.config_app, name="config", help="[bold cyan]Inspect[/] and validate project configuration.")
+app.add_typer(state_cmd.state_app, name="state", help="[bold cyan]Manage[/] and inspect local state files.")
 
 
 # ── Version callback ────────────────────────────────────────────────────────

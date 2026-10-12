@@ -55,6 +55,9 @@ def config_check(
     pkg_source = file_source if (has_file and cfg.ignore_packages) else "default"
     table.add_row("ignore.packages", str(cfg.ignore_packages) if cfg.ignore_packages else "[]", pkg_source)
 
+    hist_source = file_source if (has_file and cfg.history_max_entries != 1000) else "default"
+    table.add_row("history.max_entries", str(cfg.history_max_entries), hist_source)
+
     console.print(table)
     if has_file:
         console.print(f"[zg.ok]Configuration file:[/] {cfg.config_path}")

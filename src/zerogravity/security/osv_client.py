@@ -5,12 +5,19 @@ OSV.dev API batch client with local caching, pagination, hydration, and resilien
 from __future__ import annotations
 
 import concurrent.futures
-import json
 import time
 from pathlib import Path
 from typing import Any
 
 from zerogravity import net
+from zerogravity.state import (
+    atomic_write_json,
+    ensure_state_dir,
+    file_lock,
+    get_lock_path,
+    get_state_dir,
+    load_json,
+)
 
 OSV_BATCH_ENDPOINT = "https://api.osv.dev/v1/querybatch"
 OSV_VULN_ENDPOINT = "https://api.osv.dev/v1/vulns"
@@ -35,33 +42,26 @@ class OSVClient:
             self.cache_file = Path(cache_file)
             self.cache_dir = self.cache_file.parent
         else:
-            self.cache_dir = Path.home() / ".zerogravity"
+            self.cache_dir = get_state_dir()
             self.cache_file = self.cache_dir / OSV_CACHE_FILENAME
 
+        self.lock_file = get_lock_path(self.cache_file)
         self.ttl_seconds = ttl_seconds
         self.timeout = timeout
         self.errors: list[str] = []
         self.complete: bool = True
 
     def _ensure_dir(self) -> None:
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        ensure_state_dir(self.cache_dir)
 
     def _load_cache(self) -> dict[str, Any]:
-        if not self.cache_file.exists():
-            return {}
-        try:
-            with open(self.cache_file, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, OSError):
-            return {}
+        data = load_json(self.cache_file, default={})
+        return data if isinstance(data, dict) else {}
 
     def _save_cache(self, data: dict[str, Any]) -> None:
         self._ensure_dir()
-        try:
-            with open(self.cache_file, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
-        except OSError:
-            pass
+        with file_lock(self.lock_file):
+            atomic_write_json(self.cache_file, data)
 
     def _hydrate_vuln(self, vuln_id: str) -> dict[str, Any] | None:
         """Fetch full vulnerability record for a single vulnerability ID."""
@@ -249,5 +249,12 @@ class OSVClient:
                 "timestamp": now,
             }
 
-        self._save_cache(cache)
+        if queries_to_fetch and not no_cache:
+            self._ensure_dir()
+            with file_lock(self.lock_file):
+                disk_cache = load_json(self.cache_file, default={})
+                if not isinstance(disk_cache, dict):
+                    disk_cache = {}
+                disk_cache.update(cache)
+                atomic_write_json(self.cache_file, disk_cache)
         return results

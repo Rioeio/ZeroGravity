@@ -93,6 +93,7 @@ class ZeroGravityConfig:
     binary_map: dict[str, list[str]] = field(default_factory=dict)
     ignore_issues: list[str] = field(default_factory=list)
     ignore_packages: list[str] = field(default_factory=list)
+    history_max_entries: int = 1000
     config_path: Path | None = None
     warnings: list[str] = field(default_factory=list)
 
@@ -141,15 +142,17 @@ def parse_config_data(
     binary_map: dict[str, list[str]] = {}
     ignore_issues: list[str] = []
     ignore_packages: list[str] = []
+    history_max_entries: int = 1000
     warnings: list[str] = []
 
-    known_sections = {"scan", "binary_map", "binary-map", "binaries", "ignore"}
+    known_sections = {"scan", "binary_map", "binary-map", "binaries", "ignore", "history"}
     known_scan_keys = {"exclude"}
     known_ignore_keys = {"issues", "categories", "packages"}
+    known_history_keys = {"max_entries"}
 
     for key in data:
         if key not in known_sections:
-            close = difflib.get_close_matches(key, ["scan", "binary_map", "ignore"])
+            close = difflib.get_close_matches(key, ["scan", "binary_map", "ignore", "history"])
             if close:
                 msg = f"Unknown section or key '{key}'. Did you mean '{close[0]}'?"
             else:
@@ -245,6 +248,27 @@ def parse_config_data(
             line, col = _find_key_location(file_content, "ignore")
             raise ConfigError("ignore must be a table or list of strings", file=config_path, line=line, col=col)
 
+    # 4. History section
+    if "history" in data:
+        history_section = data["history"]
+        if not isinstance(history_section, dict):
+            line, col = _find_key_location(file_content, "history")
+            raise ConfigError("[history] must be a section (table)", file=config_path, line=line, col=col)
+        for k in history_section:
+            if k not in known_history_keys:
+                close = difflib.get_close_matches(k, list(known_history_keys))
+                if close:
+                    msg = f"Unknown key '{k}' in [history]. Did you mean '{close[0]}'?"
+                else:
+                    msg = f"Unknown key '{k}' in [history]."
+                warnings.append(msg)
+        if "max_entries" in history_section:
+            raw_max = history_section["max_entries"]
+            if not isinstance(raw_max, int) or isinstance(raw_max, bool) or raw_max <= 0:
+                line, col = _find_key_location(file_content, "max_entries")
+                raise ConfigError("history.max_entries must be a positive integer", file=config_path, line=line, col=col)
+            history_max_entries = raw_max
+
     from zerogravity.ui.console import console
     for w in warnings:
         console.print(f"[zg.warning]Warning:[/] {w}")
@@ -254,6 +278,7 @@ def parse_config_data(
         binary_map=binary_map,
         ignore_issues=ignore_issues,
         ignore_packages=ignore_packages,
+        history_max_entries=history_max_entries,
         config_path=config_path,
         warnings=warnings,
     )

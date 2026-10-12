@@ -6,7 +6,6 @@ Stored alongside ~/.zerogravity/scan_history.json.
 from __future__ import annotations
 
 import hashlib
-import json
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +14,14 @@ from zerogravity.parsers.base import (
     DependencyType,
     Ecosystem,
     ProjectManifest,
+)
+from zerogravity.state import (
+    atomic_write_json,
+    ensure_state_dir,
+    file_lock,
+    get_lock_path,
+    get_state_dir,
+    load_json,
 )
 
 CACHE_FILENAME = "scan_cache.json"
@@ -138,28 +145,21 @@ class ScanCacheManager:
             self.cache_file = Path(cache_file)
             self.cache_dir = self.cache_file.parent
         else:
-            self.cache_dir = Path.home() / ".zerogravity"
+            self.cache_dir = get_state_dir()
             self.cache_file = self.cache_dir / CACHE_FILENAME
+        self.lock_file = get_lock_path(self.cache_file)
 
     def _ensure_dir(self) -> None:
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        ensure_state_dir(self.cache_dir)
 
     def _load_raw_cache(self) -> dict[str, Any]:
-        if not self.cache_file.exists():
-            return {}
-        try:
-            with open(self.cache_file, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, OSError):
-            return {}
+        data = load_json(self.cache_file, default={})
+        return data if isinstance(data, dict) else {}
 
     def _save_raw_cache(self, data: dict[str, Any]) -> None:
         self._ensure_dir()
-        try:
-            with open(self.cache_file, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
-        except OSError:
-            pass
+        with file_lock(self.lock_file):
+            atomic_write_json(self.cache_file, data)
 
     def get_project_files_stat(self, project_path: Path) -> dict[str, dict[str, Any]]:
         """Collect mtime, size, and hash for all manifest/lockfile files in project."""
@@ -230,8 +230,10 @@ class ScanCacheManager:
 
     def clear(self) -> None:
         """Clear all cached scan results."""
-        if self.cache_file.exists():
-            try:
-                self.cache_file.unlink()
-            except OSError:
-                pass
+        self._ensure_dir()
+        with file_lock(self.lock_file):
+            if self.cache_file.exists():
+                try:
+                    self.cache_file.unlink()
+                except OSError:
+                    pass
