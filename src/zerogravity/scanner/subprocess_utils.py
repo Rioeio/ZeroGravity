@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Sequence, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 async def _reap(proc: asyncio.subprocess.Process) -> None:
@@ -13,8 +16,8 @@ async def _reap(proc: asyncio.subprocess.Process) -> None:
             pass
     try:
         await asyncio.wait_for(proc.wait(), timeout=2.0)
-    except Exception:
-        pass
+    except (asyncio.TimeoutError, OSError) as err:
+        logger.debug("Failed reaping process: %s", err, exc_info=True)
 
 
 async def run_command(cmd: Sequence[str], timeout: float) -> Tuple[int, bytes, bytes]:

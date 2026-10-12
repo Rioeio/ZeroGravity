@@ -160,7 +160,7 @@ async def probe_binary(name: str, command: List[str]) -> BinaryProbe:
             version=None,
             error=f"Permission denied running '{' '.join(command)}': {e}",
         )
-    except Exception as e:
+    except (OSError, RuntimeError) as e:
         return BinaryProbe(
             name=name,
             installed=True,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import configparser
+import logging
 import re
 import tomllib
 from pathlib import Path
@@ -13,6 +14,8 @@ from zerogravity.parsers.base import (
     Ecosystem,
     ProjectManifest,
 )
+
+logger = logging.getLogger("parser.python")
 
 
 def _pep503_normalize(name: str) -> str:
@@ -38,8 +41,8 @@ def _extract_python_workspace_info(path: Path, data: dict) -> tuple[list[Path], 
                         if p.is_dir() and ((p / "pyproject.toml").is_file() or (p / "setup.py").is_file()):
                             if p.resolve() != path.resolve():
                                 member_paths.add(p.resolve())
-                except Exception:
-                    pass
+                except (OSError, RuntimeError) as err:
+                    logger.debug("Failed resolving uv workspace pattern %s in %s: %s", clean_pat, path, err, exc_info=True)
 
     # Helper for path dependency inspection
     resolved_root = path.resolve()
@@ -61,8 +64,8 @@ def _extract_python_workspace_info(path: Path, data: dict) -> tuple[list[Path], 
                     ):
                         member_paths.add(target_path)
                         member_names.add(pkg_name)
-                except Exception:
-                    pass
+                except (OSError, RuntimeError, ValueError) as err:
+                    logger.debug("Failed checking dep string %s: %s", dep_str, err, exc_info=True)
 
     # 2. PEP 621 dependencies & optional-dependencies
     if "project" in data and isinstance(data["project"], dict):
@@ -91,8 +94,8 @@ def _extract_python_workspace_info(path: Path, data: dict) -> tuple[list[Path], 
                         ):
                             member_paths.add(target_path)
                             member_names.add(name)
-                    except Exception:
-                        pass
+                    except (OSError, RuntimeError, ValueError) as err:
+                        logger.debug("Failed checking poetry path dep %s: %s", name, err, exc_info=True)
 
     return sorted(list(member_paths)), member_names
 
@@ -109,8 +112,8 @@ def _find_python_workspace_root(path: Path) -> tuple[Path, list[Path]] | None:
                 members, _ = _extract_python_workspace_info(current, data)
                 if path.resolve() in members:
                     return current, members
-            except Exception:
-                pass
+            except (tomllib.TOMLDecodeError, OSError) as err:
+                logger.debug("Failed reading %s: %s", pyproject, err, exc_info=True)
         if (current / ".git").is_dir():
             break
         current = current.parent
@@ -130,8 +133,8 @@ def _get_python_member_names(member_paths: list[Path]) -> set[str]:
                     names.add(data["project"]["name"])
                 elif "tool" in data and "poetry" in data["tool"] and "name" in data["tool"]["poetry"]:
                     names.add(data["tool"]["poetry"]["name"])
-            except Exception:
-                pass
+            except (tomllib.TOMLDecodeError, OSError) as err:
+                logger.debug("Failed reading %s: %s", pyp, err, exc_info=True)
     return names
 
 
@@ -148,7 +151,12 @@ class PythonParser(BaseParser):
     def can_parse(self, path: Path) -> bool:
         """Check if any Python manifest files exist."""
         manifests = ["requirements.txt", "pyproject.toml", "Pipfile", "setup.cfg"]
-        return any((path / m).is_file() for m in manifests)
+        found = False
+        for m in manifests:
+            if (path / m).is_file():
+                logger.debug("Manifest found: %s in %s", m, path)
+                found = True
+        return found
 
     def _parse_pep508_req(self, req_str: str, source: str, dep_type: DependencyType) -> Dependency:
         """Basic parser for PEP 508 requirement strings."""
@@ -267,7 +275,8 @@ class PythonParser(BaseParser):
         cp = configparser.ConfigParser()
         try:
             cp.read(path, encoding="utf-8")
-        except Exception:
+        except (configparser.Error, OSError) as err:
+            logger.debug("Failed parsing setup.cfg at %s: %s", path, err, exc_info=True)
             return project_name, engine_constraints, deps
 
         if cp.has_section("metadata"):

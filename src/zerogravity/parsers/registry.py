@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +9,8 @@ from zerogravity.parsers.go_parser import GoParser
 from zerogravity.parsers.node_parser import NodeParser
 from zerogravity.parsers.python_parser import PythonParser
 from zerogravity.parsers.rust_parser import RustParser
+
+logger = logging.getLogger("parser.registry")
 
 
 class ParserRegistry:
@@ -35,7 +38,12 @@ class ParserRegistry:
         Returns:
             A list of parsers that support the given project.
         """
-        return [parser for parser in self.parsers if parser.can_parse(path)]
+        detected: list[BaseParser] = []
+        for parser in self.parsers:
+            if parser.can_parse(path):
+                logger.debug("Selected parser %s for %s", parser.__class__.__name__, path)
+                detected.append(parser)
+        return detected
 
     def parse_all(self, path: Path) -> list[ProjectManifest]:
         """
@@ -51,14 +59,17 @@ class ParserRegistry:
 
         manifests = []
         for parser in self.detect_parsers(path):
-            manifest = parser.parse(path)
-            if manifest:
-                if not manifest.container_file:
-                    container_file = detect_container_config(manifest.project_path)
-                    if not container_file and manifest.workspace_root:
-                        container_file = detect_container_config(manifest.workspace_root)
-                    manifest.container_file = container_file
-                manifests.append(manifest)
+            try:
+                manifest = parser.parse(path)
+                if manifest:
+                    if not manifest.container_file:
+                        container_file = detect_container_config(manifest.project_path)
+                        if not container_file and manifest.workspace_root:
+                            container_file = detect_container_config(manifest.workspace_root)
+                        manifest.container_file = container_file
+                    manifests.append(manifest)
+            except (ValueError, OSError, KeyError, TypeError) as err:
+                logger.debug("Failed to parse manifest in %s: %s", path, err, exc_info=True)
         return manifests
 
     def detect_and_parse(
@@ -83,9 +94,12 @@ class ParserRegistry:
         mgr = cache_manager if cache_manager is not None else ScanCacheManager()
 
         if use_cache:
+            logger.debug("Checking cache for %s", path)
             cached = mgr.get(path)
             if cached is not None:
+                logger.debug("Cache hit for %s", path)
                 return cached
+            logger.debug("Cache miss for %s", path)
 
         manifests = self.parse_all(path)
         if use_cache and manifests:

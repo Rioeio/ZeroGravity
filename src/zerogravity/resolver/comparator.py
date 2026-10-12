@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from packaging.specifiers import SpecifierSet
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
 from zerogravity.resolver.models import Severity
@@ -106,7 +106,7 @@ def compare_version(required_spec: str, installed_version: str) -> Severity:
                 lower_set = SpecifierSet(lower_bounds)
                 if parsed_version in lower_set:
                     is_newer = True
-        except Exception:
+        except (InvalidSpecifier, InvalidVersion, ValueError):
             continue
 
     if not valid_specifier_parsed:

@@ -70,7 +70,7 @@ class OSVClient:
             data = net.request_json(url, method="GET", timeout=self.timeout)
             if isinstance(data, dict):
                 return data
-        except (net.NetworkError, Exception) as err:
+        except (net.NetworkError, OSError, ValueError, RuntimeError) as err:
             self.errors.append(f"Failed to hydrate {vuln_id}: {err}")
             self.complete = False
         return None
@@ -126,7 +126,7 @@ class OSVClient:
                     data={"queries": chunk_queries},
                     timeout=self.timeout,
                 )
-            except (net.NetworkError, Exception) as err:
+            except (net.NetworkError, OSError, ValueError, RuntimeError) as err:
                 self.errors.append(f"OSV batch query failed: {err}")
                 self.complete = False
                 continue
@@ -166,7 +166,7 @@ class OSVClient:
                         data={"queries": next_batch_queries},
                         timeout=self.timeout,
                     )
-                except (net.NetworkError, Exception) as err:
+                except (net.NetworkError, OSError, ValueError, RuntimeError) as err:
                     self.errors.append(f"OSV paginated query failed: {err}")
                     self.complete = False
                     break
@@ -223,7 +223,7 @@ class OSVClient:
                                 "modified": stubs_to_hydrate.get(vid, ""),
                                 "data": record,
                             }
-                    except Exception as err:
+                    except (net.NetworkError, OSError, ValueError, RuntimeError) as err:
                         self.errors.append(f"Error hydrating {vid}: {err}")
                         self.complete = False
 

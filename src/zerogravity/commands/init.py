@@ -43,6 +43,6 @@ def init_command(
     except FileExistsError as e:
         print_error(str(e))
         raise typer.Exit(code=1)
-    except Exception as e:
+    except OSError as e:
         print_error(f"Failed to create configuration file: {e}")
         raise typer.Exit(code=1)

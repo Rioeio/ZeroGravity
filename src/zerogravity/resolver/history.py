@@ -33,9 +33,9 @@ class ScanHistoryManager:
             self.max_entries = max_entries
         else:
             try:
-                from zerogravity.config import load_config
+                from zerogravity.config import ConfigError, load_config
                 self.max_entries = load_config().history_max_entries
-            except Exception:
+            except (ConfigError, OSError, ValueError):
                 self.max_entries = 1000
 
     def _ensure_dir(self) -> None:

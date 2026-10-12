@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,8 @@ from zerogravity.parsers.base import (
     Ecosystem,
     ProjectManifest,
 )
+
+logger = logging.getLogger("parser.go")
 
 
 def _extract_go_workspace_info(path: Path, go_work_path: Path) -> tuple[list[Path], set[str]]:
@@ -108,7 +111,14 @@ class GoParser(BaseParser):
 
     def can_parse(self, path: Path) -> bool:
         """Check if go.mod or go.work exists in the directory."""
-        return (path / "go.mod").is_file() or (path / "go.work").is_file()
+        found = False
+        if (path / "go.mod").is_file():
+            logger.debug("Manifest found: go.mod in %s", path)
+            found = True
+        if (path / "go.work").is_file():
+            logger.debug("Manifest found: go.work in %s", path)
+            found = True
+        return found
 
     def _parse_go_sum(self, lockfile_path: Path) -> dict[str, str]:
         """

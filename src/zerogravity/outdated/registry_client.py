@@ -9,7 +9,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
-from zerogravity.net import request_json
+from zerogravity.net import NetworkError, request_json
 from zerogravity.state import (
     atomic_write_json,
     ensure_state_dir,
@@ -92,7 +92,7 @@ class RegistryClient:
             data = request_json(url, method="GET", timeout=self.timeout)
             if isinstance(data, dict):
                 return data
-        except Exception as err:
+        except (NetworkError, OSError, ValueError) as err:
             self.errors.append(f"Registry request failed for {url}: {err}")
             self.complete = False
             return None

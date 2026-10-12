@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import sys
@@ -7,6 +8,8 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -32,21 +35,23 @@ class CrossPlatformLinker:
                 )
                 if result.returncode == 0:
                     return LinkResult("success", "junction")
-            except Exception:
-                pass
+            except (subprocess.SubprocessError, OSError) as err:
+                logger.debug("Failed to create junction: %s", err, exc_info=True)
 
             # Fallback: Try os.symlink
             try:
                 os.symlink(target, link_path, target_is_directory=target.is_dir())
                 return LinkResult("fallback", "symlink")
-            except Exception as e:
+            except (OSError, RuntimeError) as e:
+                logger.debug("Failed to create symlink: %s", e, exc_info=True)
                 return LinkResult("error", "none", f"Failed to create link: {e}")
 
         else:
             try:
                 os.symlink(target, link_path)
                 return LinkResult("success", "symlink")
-            except Exception as e:
+            except (OSError, RuntimeError) as e:
+                logger.debug("Failed to create symlink: %s", e, exc_info=True)
                 return LinkResult("error", "none", f"Failed to create symlink: {e}")
 
     def is_link(self, path: Path) -> bool:
@@ -80,15 +85,16 @@ class CrossPlatformLinker:
                 import stat
                 try:
                     os.chmod(path, stat.S_IWRITE)
-                except Exception:
-                    pass
+                except OSError as err:
+                    logger.debug("Failed chmod on %s: %s", path, err, exc_info=True)
 
             if sys.platform == "win32" and path.is_dir():
                 os.rmdir(path)
             else:
                 path.unlink()
             return True
-        except Exception:
+        except OSError as err:
+            logger.debug("Failed removing link %s: %s", path, err, exc_info=True)
             return False
 
     def check_same_volume(self, path_a: Path, path_b: Path) -> bool:
@@ -103,7 +109,8 @@ class CrossPlatformLinker:
             stat_a = path_a.stat().st_dev if path_a.exists() else path_a.parent.stat().st_dev
             stat_b = path_b.stat().st_dev if path_b.exists() else path_b.parent.stat().st_dev
             return stat_a == stat_b
-        except Exception:
+        except OSError as err:
+            logger.debug("Failed checking volume for %s and %s: %s", path_a, path_b, err, exc_info=True)
             return False
 
 def detect_link_capabilities() -> Dict[str, bool]:
@@ -126,16 +133,16 @@ def detect_link_capabilities() -> Dict[str, bool]:
         try:
             os.link(target_file, hardlink_path)
             capabilities["hardlinks_available"] = True
-        except Exception:
-            pass
+        except OSError as err:
+            logger.debug("Hardlinks not available: %s", err, exc_info=True)
 
         # Test symlinks
         symlink_path = temp_path / "symlink.txt"
         try:
             os.symlink(target_file, symlink_path)
             capabilities["symlinks_available"] = True
-        except Exception:
-            pass
+        except OSError as err:
+            logger.debug("Symlinks not available: %s", err, exc_info=True)
 
         # Test junctions (Windows only)
         if sys.platform == "win32":
@@ -146,7 +153,7 @@ def detect_link_capabilities() -> Dict[str, bool]:
                     capture_output=True
                 )
                 capabilities["junctions_available"] = (result.returncode == 0)
-            except Exception:
-                pass
+            except (subprocess.SubprocessError, OSError) as err:
+                logger.debug("Junctions not available: %s", err, exc_info=True)
 
     return capabilities

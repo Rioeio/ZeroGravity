@@ -45,7 +45,7 @@ def _parse_retry_after(header_val: str | None) -> float | None:
     try:
         dt = email.utils.parsedate_to_datetime(header_val)
         return max(0.0, (dt.timestamp() - time.time()))
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return None
 
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import socket
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -42,8 +44,8 @@ def test_network_guard_allows_integration_marker() -> None:
         urllib.request.urlopen("http://example.com", timeout=0.1)
     except NetworkNotAllowedError:
         pytest.fail("NetworkNotAllowedError raised on integration-marked test!")
-    except Exception:
-        pass
+    except (OSError, urllib.error.URLError) as err:
+        logging.getLogger("test").debug("Ignored expected network error: %s", err)
 
 
 def test_hermetic_env_isolates_zerogravity_home(tmp_path: Path) -> None:

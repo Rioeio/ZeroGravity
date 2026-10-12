@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import shutil
 from dataclasses import dataclass
@@ -9,6 +10,8 @@ from typing import Any, Dict, List, Optional
 
 from zerogravity.dedup.linker import CrossPlatformLinker
 from zerogravity.dedup.registry import DeduplicationRegistry
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -62,8 +65,8 @@ def _get_logical_project_root(path: Path) -> Path:
                     data = json.load(f)
                 if "workspaces" in data:
                     return scan_cursor
-            except Exception:
-                pass
+            except (json.JSONDecodeError, OSError) as err:
+                logger.debug("Failed reading %s: %s", pkg_json, err, exc_info=True)
 
         if pyproject.is_file():
             try:
@@ -74,8 +77,8 @@ def _get_logical_project_root(path: Path) -> Path:
                     uv_ws = data["tool"].get("uv", {})
                     if isinstance(uv_ws, dict) and "workspace" in uv_ws:
                         return scan_cursor
-            except Exception:
-                pass
+            except (tomllib.TOMLDecodeError, OSError) as err:
+                logger.debug("Failed reading %s: %s", pyproject, err, exc_info=True)
 
         if (scan_cursor / ".git").is_dir():
             break
@@ -128,7 +131,8 @@ class DeduplicationEngine:
                         while chunk := f.read(65536):
                             file_hasher.update(chunk)
                     manifest.append((str(rel_path), stat.st_size, file_hasher.hexdigest()))
-                except Exception:
+                except (OSError, RuntimeError) as err:
+                    logger.debug("Failed hashing %s: %s", file_path, err, exc_info=True)
                     continue
 
         # Sort for determinism
@@ -212,7 +216,7 @@ class DeduplicationEngine:
 
             return OptimizationResult("success", dir_hash, bytes_saved, dep_path, store_package_path)
 
-        except Exception as e:
+        except (OSError, RuntimeError, shutil.Error) as e:
             return OptimizationResult("error", dir_hash, 0, None, None, str(e))
 
     def restore(self, dep_path: Path) -> RestoreResult:
@@ -235,7 +239,7 @@ class DeduplicationEngine:
                     os.chmod(os.path.join(root, file), 0o644)
             self.registry.remove_link(str(dep_path))
             return RestoreResult("success", dep_path)
-        except Exception as e:
+        except (OSError, RuntimeError, shutil.Error) as e:
             return RestoreResult("error", dep_path, str(e))
 
     def scan_for_duplicates(self, project_paths: List[Path], target_dirs: Optional[List[str]] = None) -> DuplicateReport:

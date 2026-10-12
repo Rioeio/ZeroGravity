@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime
 
@@ -9,6 +10,8 @@ from rich.table import Table
 
 from zerogravity.state import ensure_state_dir, get_state_dir, load_json
 from zerogravity.ui.console import console
+
+logger = logging.getLogger(__name__)
 
 state_app = typer.Typer(
     help="[bold cyan]Manage[/] and inspect ZeroGravity local state files.",
@@ -68,7 +71,8 @@ def state_doctor(
             data = load_json(fpath, default={})
             entries_count = len(data) if isinstance(data, (dict, list)) else 0
             table.add_row(fname, _format_size(size), str(entries_count), "[green]healthy[/green]")
-        except Exception:
+        except (OSError, TypeError, ValueError) as err:
+            logger.debug("Failed inspecting state file %s: %s", fpath, err, exc_info=True)
             table.add_row(fname, _format_size(fpath.stat().st_size), "?", "[red]damaged[/red]")
 
     console.print(table)

@@ -1,5 +1,6 @@
 import fnmatch
 import json
+import logging
 import re
 from pathlib import Path
 
@@ -12,6 +13,8 @@ from zerogravity.parsers.base import (
     Ecosystem,
     ProjectManifest,
 )
+
+logger = logging.getLogger("parser.node")
 
 _YARN_ENTRY_RE = re.compile(
     r'^((?:"[^"]+"|[^\s,]+)(?:,\s*(?:"[^"]+"|[^\s,]+))*):\n\s+version\s+"([^"]+)"',
@@ -116,8 +119,8 @@ def _extract_node_workspace_patterns(package_json_data: dict, path: Path) -> lis
                 pdata = yaml.safe_load(f) or {}
                 if isinstance(pdata, dict) and "packages" in pdata and isinstance(pdata["packages"], list):
                     patterns.extend(pdata["packages"])
-        except Exception:
-            pass
+        except (yaml.YAMLError, OSError) as err:
+            logger.debug("Failed reading %s: %s", pnpm_ws, err, exc_info=True)
 
     return patterns
 
@@ -144,8 +147,8 @@ def _resolve_node_workspace_members(root_path: Path, patterns: list[str]) -> lis
                             break
                     if not excluded:
                         members.add(p.resolve())
-        except Exception:
-            pass
+        except (OSError, RuntimeError) as err:
+            logger.debug("Failed resolving workspace pattern %s in %s: %s", clean_pat, root_path, err, exc_info=True)
 
     return sorted(list(members))
 
@@ -163,8 +166,8 @@ def _find_node_workspace_root(path: Path) -> tuple[Path, list[Path]] | None:
                     with open(pkg_json, "r", encoding="utf-8") as f:
                         data = json.load(f)
                     patterns.extend(_extract_node_workspace_patterns(data, current))
-                except Exception:
-                    pass
+                except (json.JSONDecodeError, OSError) as err:
+                    logger.debug("Failed reading %s: %s", pkg_json, err, exc_info=True)
             if pnpm_ws.is_file() and not patterns:
                 patterns.extend(_extract_node_workspace_patterns({}, current))
 
@@ -189,8 +192,8 @@ def _get_workspace_member_names(member_paths: list[Path]) -> set[str]:
                     data = json.load(f)
                 if "name" in data and isinstance(data["name"], str):
                     names.add(data["name"])
-            except Exception:
-                pass
+            except (json.JSONDecodeError, OSError) as err:
+                logger.debug("Failed reading %s: %s", pkg_file, err, exc_info=True)
     return names
 
 
@@ -208,7 +211,14 @@ class NodeParser(BaseParser):
         """
         Check if package.json or pnpm-workspace.yaml exists in the directory.
         """
-        return (path / "package.json").is_file() or (path / "pnpm-workspace.yaml").is_file()
+        found = False
+        if (path / "package.json").is_file():
+            logger.debug("Manifest found: package.json in %s", path)
+            found = True
+        if (path / "pnpm-workspace.yaml").is_file():
+            logger.debug("Manifest found: pnpm-workspace.yaml in %s", path)
+            found = True
+        return found
 
     def parse(self, path: Path) -> ProjectManifest:
         """

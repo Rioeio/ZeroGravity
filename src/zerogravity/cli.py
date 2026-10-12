@@ -75,8 +75,28 @@ def main(
         callback=_version_callback,
         is_eager=True,
     ),
+    verbose: int = typer.Option(
+        0,
+        "--verbose",
+        "-v",
+        count=True,
+        help="Increase verbosity (-v for INFO, -vv for DEBUG).",
+    ),
+    quiet: bool = typer.Option(
+        False,
+        "--quiet",
+        "-q",
+        help="Quiet mode: suppress non-essential output (ERROR only).",
+    ),
+    no_color: bool = typer.Option(
+        False,
+        "--no-color",
+        help="Disable coloured output.",
+    ),
 ) -> None:
     """
     ZeroGravity — Bridge your code to your machine.
     """
-    pass
+    from zerogravity.ui.console import configure_environment
+
+    configure_environment(verbose=verbose, quiet=quiet, no_color=no_color, is_global_callback=True)

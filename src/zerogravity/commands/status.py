@@ -7,11 +7,15 @@ and last scan info.
 
 from __future__ import annotations
 
+import logging
+
 from zerogravity.ui.console import (
     console,
     print_banner,
     print_section,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def status_command() -> None:
@@ -99,8 +103,7 @@ def status_command() -> None:
             f"[zg.label]Links:[/] [zg.value]{dedup_status.get('total_links', 0)}[/]  │  "
             f"[zg.label]Savings:[/] [zg.ok]{_format_bytes(dedup_status.get('estimated_bytes_saved', 0))}[/]"
         )
-    except Exception:
-        # Dedup engine not yet initialised — that's fine
-        pass
+    except (OSError, RuntimeError, ValueError) as err:
+        logger.debug("Dedup engine not initialised: %s", err, exc_info=True)
 
     console.print()

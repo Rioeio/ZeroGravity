@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import fnmatch
+import logging
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,8 @@ from zerogravity.parsers.base import (
     Ecosystem,
     ProjectManifest,
 )
+
+logger = logging.getLogger("parser.rust")
 
 
 def _extract_rust_workspace_info(path: Path, data: dict[str, Any]) -> tuple[list[Path], set[str]]:
@@ -43,8 +46,8 @@ def _extract_rust_workspace_info(path: Path, data: dict[str, Any]) -> tuple[list
                                     break
                             if not excluded:
                                 member_paths.add(p.resolve())
-                except Exception:
-                    pass
+                except (OSError, RuntimeError) as err:
+                    logger.debug("Failed resolving Cargo workspace pattern %s in %s: %s", clean_pat, path, err, exc_info=True)
 
     return sorted(list(member_paths)), member_names
 
@@ -61,8 +64,8 @@ def _find_rust_workspace_root(path: Path) -> tuple[Path, list[Path]] | None:
                 members, _ = _extract_rust_workspace_info(current, data)
                 if path.resolve() in members:
                     return current, members
-            except Exception:
-                pass
+            except (tomllib.TOMLDecodeError, OSError) as err:
+                logger.debug("Failed reading %s: %s", cargo_toml, err, exc_info=True)
         if (current / ".git").is_dir():
             break
         current = current.parent
@@ -81,8 +84,8 @@ def _get_rust_member_names(member_paths: list[Path]) -> set[str]:
                 pkg = data.get("package")
                 if isinstance(pkg, dict) and "name" in pkg and isinstance(pkg["name"], str):
                     names.add(pkg["name"])
-            except Exception:
-                pass
+            except (tomllib.TOMLDecodeError, OSError) as err:
+                logger.debug("Failed reading %s: %s", ct, err, exc_info=True)
     return names
 
 
@@ -98,7 +101,10 @@ class RustParser(BaseParser):
 
     def can_parse(self, path: Path) -> bool:
         """Check if Cargo.toml exists in the directory."""
-        return (path / "Cargo.toml").is_file()
+        if (path / "Cargo.toml").is_file():
+            logger.debug("Manifest found: Cargo.toml in %s", path)
+            return True
+        return False
 
     def _parse_dep_spec(
         self,

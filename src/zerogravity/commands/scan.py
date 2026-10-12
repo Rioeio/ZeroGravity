@@ -62,11 +62,23 @@ def scan_command(
         "-f",
         help="Output format: table (default), json, sarif, or junit.",
     ),
-    verbose: bool = typer.Option(
-        False,
+    verbose: int = typer.Option(
+        0,
         "--verbose",
         "-v",
-        help="Show detailed output including all OK checks.",
+        count=True,
+        help="Increase verbosity (-v for INFO, -vv for DEBUG).",
+    ),
+    quiet: bool = typer.Option(
+        False,
+        "--quiet",
+        "-q",
+        help="Quiet mode: suppress non-essential output (ERROR only).",
+    ),
+    no_color: bool = typer.Option(
+        False,
+        "--no-color",
+        help="Disable coloured output.",
     ),
     heal: bool = typer.Option(
         False,
@@ -124,6 +136,7 @@ def scan_command(
     from zerogravity.scanner.env_scanner import get_platform_info
     from zerogravity.scanner.version_manager import detect_all_managers_sync
     from zerogravity.security.scanner import scan_vulnerabilities
+    from zerogravity.ui.console import configure_environment
     from zerogravity.ui.renderers import (
         render_conflict_report,
         render_outdated_summary,
@@ -132,6 +145,8 @@ def scan_command(
         render_system_snapshot,
     )
 
+    configure_environment(verbose=verbose, quiet=quiet, no_color=no_color)
+
     project_paths = [Path(p).resolve() for p in paths] if paths else [Path.cwd()]
 
     for project_path in project_paths:
@@ -139,7 +154,7 @@ def scan_command(
             print_error(f"Not a directory: {project_path}")
             raise typer.Exit(code=1)
 
-    if output_format == "table":
+    if output_format == "table" and not quiet:
         print_banner()
 
     # Load configuration

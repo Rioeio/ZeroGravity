@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import shutil
 from typing import Any, Dict
 
 from zerogravity.resolver.models import VersionManagerInfo
 from zerogravity.scanner.subprocess_utils import run_command
+
+logger = logging.getLogger(__name__)
 
 VERSION_MANAGERS: Dict[str, Dict[str, Any]] = {
     "nvm": {
@@ -61,8 +64,8 @@ async def detect_version_manager(name: str, detection_config: Dict[str, Any]) ->
                 returncode, stdout, _ = await run_command(version_cmd, timeout=2.0)
                 if returncode == 0:
                     active_version = stdout.decode("utf-8", errors="ignore").strip()
-            except Exception:
-                pass
+            except (asyncio.TimeoutError, OSError, RuntimeError) as err:
+                logger.debug("Failed querying active version for %s: %s", name, err, exc_info=True)
 
         if list_cmd:
             try:
@@ -70,8 +73,8 @@ async def detect_version_manager(name: str, detection_config: Dict[str, Any]) ->
                 if returncode == 0:
                     lines = stdout.decode("utf-8", errors="ignore").splitlines()
                     installed_versions = [line.strip().strip("*").strip() for line in lines if line.strip()]
-            except Exception:
-                pass
+            except (asyncio.TimeoutError, OSError, RuntimeError) as err:
+                logger.debug("Failed querying installed versions for %s: %s", name, err, exc_info=True)
 
     return VersionManagerInfo(
         name=name,
