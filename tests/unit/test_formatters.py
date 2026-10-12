@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import xml.etree.ElementTree as ET
-from datetime import datetime
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -17,6 +16,7 @@ from zerogravity.security.models import (
     VulnerabilityAdvisory,
     VulnerabilitySeverity,
 )
+from zerogravity.time import utc_now
 
 runner = CliRunner()
 
@@ -37,7 +37,7 @@ def test_sarif_formatter_structure_and_schema():
         issues=[issue],
         scanned_projects=1,
         scanned_binaries=5,
-        timestamp=datetime.now(),
+        timestamp=utc_now(),
     )
 
     advisory = VulnerabilityAdvisory(
@@ -111,7 +111,7 @@ def test_junit_formatter_structure_and_xml_parsing():
         issues=[issue_warn],
         scanned_projects=1,
         scanned_binaries=5,
-        timestamp=datetime.now(),
+        timestamp=utc_now(),
     )
 
     advisory = VulnerabilityAdvisory(

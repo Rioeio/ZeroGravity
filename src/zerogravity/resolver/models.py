@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from zerogravity.time import utc_now
+
 
 class Severity(enum.Enum):
     """Severity classification for detected issues."""
@@ -114,7 +116,7 @@ class ResolutionReport:
     issues: list[Issue] = field(default_factory=list)
     scanned_projects: int = 0
     scanned_binaries: int = 0
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=utc_now)
 
     @property
     def critical_count(self) -> int:
@@ -199,7 +201,7 @@ class SystemSnapshot:
     env_vars: dict[str, str] = field(default_factory=dict)
     version_managers: dict[str, VersionManagerInfo] = field(default_factory=dict)
     platform: dict[str, str] = field(default_factory=dict)
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=utc_now)
 
     def get_binary(self, name: str) -> BinaryProbe | None:
         """Get probe result for a specific binary."""

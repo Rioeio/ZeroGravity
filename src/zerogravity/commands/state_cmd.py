@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 import typer
 from rich import box
@@ -86,7 +86,7 @@ def state_doctor(
 
         for cfile in corrupt_files:
             cstat = cfile.stat()
-            mod_time = datetime.fromtimestamp(cstat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+            mod_time = datetime.fromtimestamp(cstat.st_mtime, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
             corrupt_table.add_row(cfile.name, _format_size(cstat.st_size), mod_time)
 
         console.print(corrupt_table)

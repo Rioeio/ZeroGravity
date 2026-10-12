@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Dict, List
 
 from zerogravity.parsers.base import ProjectManifest
@@ -13,6 +12,7 @@ from zerogravity.resolver.models import (
     Severity,
     SystemSnapshot,
 )
+from zerogravity.time import utc_now
 
 
 def _check_engine_constraints(manifest: ProjectManifest, snapshot: SystemSnapshot) -> List[Issue]:
@@ -318,5 +318,5 @@ def detect_conflicts(
         issues=issues,
         scanned_projects=len(manifests),
         scanned_binaries=len(snapshot.binaries),
-        timestamp=datetime.now()
+        timestamp=utc_now()
     )

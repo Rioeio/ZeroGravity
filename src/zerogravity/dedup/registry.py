@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+from zerogravity.state import get_state_dir
+from zerogravity.time import to_utc_iso
 
 
 class DeduplicationRegistry:
@@ -11,7 +13,7 @@ class DeduplicationRegistry:
 
     def __init__(self, db_path: Optional[Path] = None):
         if db_path is None:
-            self.db_path = Path.home() / ".zerogravity" / "registry.db"
+            self.db_path = get_state_dir() / "registry.db"
         else:
             self.db_path = Path(db_path)
 
@@ -77,7 +79,7 @@ class DeduplicationRegistry:
                     '''INSERT OR IGNORE INTO packages
                        (hash, store_path, size_bytes, file_count, created_at)
                        VALUES (?, ?, ?, ?, ?)''',
-                    (hash, store_path, size_bytes, file_count, datetime.utcnow().isoformat())
+                    (hash, store_path, size_bytes, file_count, to_utc_iso())
                 )
         finally:
             if not self.conn:
@@ -92,7 +94,7 @@ class DeduplicationRegistry:
                     '''INSERT INTO links
                        (hash, link_path, project_path, original_path, created_at)
                        VALUES (?, ?, ?, ?, ?)''',
-                    (hash, link_path, project_path, original_path, datetime.utcnow().isoformat())
+                    (hash, link_path, project_path, original_path, to_utc_iso())
                 )
         finally:
             if not self.conn:

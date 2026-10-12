@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +14,7 @@ from zerogravity.state import (
     get_state_dir,
     load_json,
 )
+from zerogravity.time import parse_utc_iso, to_utc_iso, utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -49,23 +50,29 @@ class ScanHistoryManager:
             if not isinstance(current_history, dict):
                 current_history = {}
 
-            now_str = datetime.now().isoformat()
+            now_str = to_utc_iso()
             for manifest in manifests:
                 path_str = str(manifest.project_path)
+                eco_val = manifest.ecosystem.value if hasattr(manifest.ecosystem, "value") else (str(manifest.ecosystem) if manifest.ecosystem else Ecosystem.UNKNOWN.value)
                 current_history[path_str] = {
                     "project_path": path_str,
                     "project_name": manifest.project_name,
-                    "ecosystem": manifest.ecosystem.value if manifest.ecosystem else Ecosystem.UNKNOWN.value,
+                    "ecosystem": eco_val,
                     "engine_constraints": manifest.engine_constraints,
                     "dependencies_summary": len(manifest.dependencies),
                     "timestamp": now_str,
                 }
 
             if len(current_history) > self.max_entries:
-                sorted_items = sorted(
-                    current_history.items(),
-                    key=lambda item: str(item[1].get("timestamp", "")) if isinstance(item[1], dict) else "",
-                )
+                def _ts_key(item: tuple[str, Any]) -> float:
+                    if isinstance(item[1], dict) and "timestamp" in item[1]:
+                        try:
+                            return parse_utc_iso(item[1]["timestamp"]).timestamp()
+                        except (ValueError, TypeError):
+                            return 0.0
+                    return 0.0
+
+                sorted_items = sorted(current_history.items(), key=_ts_key)
                 current_history = dict(sorted_items[-self.max_entries:])
 
             atomic_write_json(self.history_file, current_history)
@@ -79,7 +86,7 @@ class ScanHistoryManager:
         if not isinstance(history_data, dict):
             return []
 
-        cutoff = datetime.now() - timedelta(days=max_age_days)
+        cutoff = utc_now() - timedelta(days=max_age_days)
         manifests = []
 
         for path_str, data in history_data.items():
@@ -94,17 +101,23 @@ class ScanHistoryManager:
                 continue
 
             try:
-                timestamp = datetime.fromisoformat(timestamp_str)
-            except ValueError:
+                timestamp = parse_utc_iso(timestamp_str)
+            except (ValueError, TypeError):
                 continue
 
             if timestamp < cutoff:
                 continue
 
+            eco_raw = data.get("ecosystem", Ecosystem.UNKNOWN.value)
+            try:
+                eco_parsed = Ecosystem(eco_raw)
+            except ValueError:
+                eco_parsed = Ecosystem.UNKNOWN
+
             manifest = ProjectManifest(
                 project_path=project_path,
                 project_name=data.get("project_name", ""),
-                ecosystem=Ecosystem(data.get("ecosystem", Ecosystem.UNKNOWN.value)),
+                ecosystem=eco_parsed,
                 dependencies=[],
                 engine_constraints=data.get("engine_constraints", {}),
                 lockfile_present=False,
@@ -122,6 +135,14 @@ class ScanHistoryManager:
             return {}
         data = load_json(self.history_file, default={})
         return data if isinstance(data, dict) else {}
+
+    def get_history(self) -> dict[str, dict[str, Any]]:
+        """Alias for get_history_entries."""
+        return self.get_history_entries()
+
+    def get_recent_scans(self, max_age_days: int = 30) -> list[ProjectManifest]:
+        """Alias for load_recent_manifests."""
+        return self.load_recent_manifests(max_age_days=max_age_days)
 
     def clear_history(self, path: Path | str | None = None) -> None:
         """Resets history file or removes a single project entry."""

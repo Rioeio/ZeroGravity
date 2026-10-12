@@ -61,6 +61,9 @@ asyncio_mode = "auto"
 markers = [
     "integration: marks tests as integration tests (allowed network calls)",
 ]
+filterwarnings = [
+    "error::DeprecationWarning:zerogravity.*",
+]
 
 [tool.ruff]
 line-length = 100
