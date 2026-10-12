@@ -172,3 +172,97 @@ def dedup_status() -> None:
     engine = DeduplicationEngine()
     status = engine.get_status()
     render_dedup_status(status)
+
+
+@dedup_app.command("verify")
+def dedup_verify(
+    repair: bool = typer.Option(
+        False,
+        "--repair",
+        help="Purge corrupted or missing store packages and unlink damaged links.",
+    ),
+    store: Optional[str] = typer.Option(
+        None,
+        "--store",
+        help="Custom store path (defaults to ~/.zerogravity/store).",
+    ),
+    db: Optional[str] = typer.Option(
+        None,
+        "--db",
+        help="Custom registry database path.",
+    ),
+) -> None:
+    """
+    Verify store integrity against known content hashes and report corrupted/missing entries.
+    """
+    from zerogravity.dedup.engine import DeduplicationEngine
+
+    engine = DeduplicationEngine(
+        store_path=Path(store) if store else None,
+        db_path=Path(db) if db else None,
+    )
+    result = engine.verify_store(repair=repair)
+
+    corrupted = result["corrupted"]
+    missing = result["missing"]
+    valid = result["valid"]
+    repaired = result["repaired"]
+
+    if valid:
+        print_info(f"Verified {len(valid)} store package(s) with valid content hashes.")
+
+    if corrupted:
+        print_error(f"Found {len(corrupted)} corrupted store package(s) with mismatched hashes:")
+        for c in corrupted:
+            print_error(f"  Hash {c['hash'][:16]}...: actual {c.get('actual_hash', '')[:16]}... at {c['path']}")
+
+    if missing:
+        print_error(f"Found {len(missing)} missing store package(s):")
+        for m in missing:
+            print_error(f"  Hash {m['hash'][:16]}... at {m['path']}")
+
+    if repaired:
+        print_success(f"Repaired {len(repaired)} damaged entry/entries:")
+        for r in repaired:
+            print_info(f"  {r['hash'][:16]}...: {r['action']}")
+
+    if (corrupted or missing) and not repair:
+        raise typer.Exit(code=1)
+    if not corrupted and not missing and not repaired:
+        print_success("All store packages verified clean.")
+
+
+@dedup_app.command("clean")
+def dedup_clean(
+    store: Optional[str] = typer.Option(
+        None,
+        "--store",
+        help="Custom store path (defaults to ~/.zerogravity/store).",
+    ),
+    db: Optional[str] = typer.Option(
+        None,
+        "--db",
+        help="Custom registry database path.",
+    ),
+) -> None:
+    """
+    Clean and prune orphaned store packages not referenced by any project.
+    """
+    from zerogravity.dedup.cleanup import cleanup_orphaned_store
+    from zerogravity.dedup.engine import DeduplicationEngine
+
+    engine = DeduplicationEngine(
+        store_path=Path(store) if store else None,
+        db_path=Path(db) if db else None,
+    )
+    res = cleanup_orphaned_store(engine)
+
+    if res["cleaned"]:
+        print_success(f"Pruned {len(res['cleaned'])} orphaned store package(s).")
+    if res["failed"] > 0:
+        for err in res["errors"]:
+            print_error(err)
+        raise typer.Exit(code=1)
+    if not res["cleaned"]:
+        print_info("No orphaned packages to clean.")
+

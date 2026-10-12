@@ -4,6 +4,8 @@ import hashlib
 import logging
 import os
 import shutil
+import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -12,6 +14,55 @@ from zerogravity.dedup.linker import CrossPlatformLinker
 from zerogravity.dedup.registry import DeduplicationRegistry
 
 logger = logging.getLogger(__name__)
+
+
+def make_store_readonly(path: Path) -> None:
+    """Make store files read-only (0o444) and subdirectories read-only (0o555)."""
+    for root, dirs, files in os.walk(path, topdown=False):
+        for file in files:
+            try:
+                os.chmod(os.path.join(root, file), 0o444)
+            except OSError as err:
+                logger.debug("Failed chmod on %s: %s", file, err)
+        for d in dirs:
+            try:
+                os.chmod(os.path.join(root, d), 0o555)
+            except OSError as err:
+                logger.debug("Failed chmod on dir %s: %s", d, err)
+    try:
+        os.chmod(path, 0o555)
+    except OSError as err:
+        logger.debug("Failed chmod on root store dir %s: %s", path, err)
+
+
+def make_store_writable(path: Path) -> None:
+    """Restore write permissions to store files (0o644) and directories (0o755)."""
+    try:
+        os.chmod(path, 0o755)
+    except OSError:
+        pass
+    for root, dirs, files in os.walk(path):
+        for d in dirs:
+            try:
+                os.chmod(os.path.join(root, d), 0o755)
+            except OSError:
+                pass
+        for f in files:
+            try:
+                os.chmod(os.path.join(root, f), 0o644)
+            except OSError:
+                pass
+
+
+@contextmanager
+def writable_store_package(path: Path):
+    """Context manager to temporarily restore write permissions to a store package."""
+    make_store_writable(path)
+    try:
+        yield
+    finally:
+        if path.exists():
+            make_store_readonly(path)
 
 
 @dataclass
@@ -191,21 +242,21 @@ class DeduplicationEngine:
                     shutil.move(str(temp_path), str(dep_path))
                     return OptimizationResult("error", dir_hash, 0, None, None, link_result.error_message)
 
-                shutil.rmtree(temp_path, ignore_errors=True)
+                from zerogravity.dedup.cleanup import handle_remove_readonly
+                shutil.rmtree(temp_path, onerror=handle_remove_readonly)
                 bytes_saved = dir_size
 
             else:
                 # Move to store and create link
                 shutil.move(str(dep_path), str(store_package_path))
 
-                # Make store files read-only
-                for root, _, files in os.walk(store_package_path):
-                    for file in files:
-                        os.chmod(os.path.join(root, file), 0o444)
+                # Make store files (0o444) and directories (0o555) read-only
+                make_store_readonly(store_package_path)
 
                 link_result = self.linker.create_link(store_package_path, dep_path)
                 if link_result.status == "error":
                     # Rollback
+                    make_store_writable(store_package_path)
                     shutil.move(str(store_package_path), str(dep_path))
                     return OptimizationResult("error", dir_hash, 0, None, None, link_result.error_message)
 
@@ -220,7 +271,7 @@ class DeduplicationEngine:
             return OptimizationResult("error", dir_hash, 0, None, None, str(e))
 
     def restore(self, dep_path: Path) -> RestoreResult:
-        """Restore a linked dependency back to a physical copy."""
+        """Restore a linked dependency back to a physical copy using atomic staging and replacement."""
         dep_path = dep_path.absolute()
 
         if not self.linker.is_link(dep_path):
@@ -230,17 +281,120 @@ class DeduplicationEngine:
         if not target_path or not target_path.exists():
             return RestoreResult("error", dep_path, "Link target does not exist")
 
+        # Stage restored copy in temporary sibling directory to avoid corrupting link on copy failure
+        temp_stage = dep_path.parent / f".{dep_path.name}.restore_tmp_{uuid.uuid4().hex[:8]}"
         try:
-            self.linker.remove_link(dep_path)
-            shutil.copytree(target_path, dep_path)
-            # Restore write permissions
-            for root, _, files in os.walk(dep_path):
-                for file in files:
-                    os.chmod(os.path.join(root, file), 0o644)
+            shutil.copytree(target_path, temp_stage)
+            for root, dirs, files in os.walk(temp_stage):
+                for d in dirs:
+                    try:
+                        os.chmod(os.path.join(root, d), 0o755)
+                    except OSError:
+                        pass
+                for f in files:
+                    try:
+                        os.chmod(os.path.join(root, f), 0o644)
+                    except OSError:
+                        pass
+        except (OSError, RuntimeError, shutil.Error) as err:
+            if temp_stage.exists():
+                from zerogravity.dedup.cleanup import handle_remove_readonly
+                shutil.rmtree(temp_stage, onerror=handle_remove_readonly)
+            return RestoreResult("error", dep_path, f"Failed staging restored package: {err}")
+
+        # Atomic replacement of link with staged directory
+        try:
+            if os.name != "nt":
+                os.replace(str(temp_stage), str(dep_path))
+            else:
+                if not self.linker.remove_link(dep_path):
+                    shutil.rmtree(temp_stage, ignore_errors=True)
+                    return RestoreResult("error", dep_path, "Failed to remove link during atomic swap")
+                try:
+                    os.replace(str(temp_stage), str(dep_path))
+                except OSError as swap_err:
+                    self.linker.create_link(target_path, dep_path)
+                    shutil.rmtree(temp_stage, ignore_errors=True)
+                    return RestoreResult("error", dep_path, f"Failed swapping restored directory: {swap_err}")
+
             self.registry.remove_link(str(dep_path))
             return RestoreResult("success", dep_path)
         except (OSError, RuntimeError, shutil.Error) as e:
+            if temp_stage.exists():
+                shutil.rmtree(temp_stage, ignore_errors=True)
             return RestoreResult("error", dep_path, str(e))
+
+    def verify_store(self, repair: bool = False) -> dict[str, Any]:
+        """Verify the integrity of all packages in the store against content hashes."""
+        valid: list[dict[str, Any]] = []
+        corrupted: list[dict[str, Any]] = []
+        missing: list[dict[str, Any]] = []
+        repaired: list[dict[str, Any]] = []
+
+        registered_hashes: set[str] = set()
+        conn = self.registry._get_connection()
+        try:
+            with conn:
+                cursor = conn.execute("SELECT hash, store_path, size_bytes FROM packages")
+                rows = [dict(r) for r in cursor.fetchall()]
+        finally:
+            if not self.registry.conn:
+                conn.close()
+
+        from zerogravity.dedup.cleanup import handle_remove_readonly
+
+        for row in rows:
+            pkg_hash = row["hash"]
+            registered_hashes.add(pkg_hash)
+            store_pkg_path = Path(row["store_path"])
+
+            if not store_pkg_path.exists():
+                missing.append({"hash": pkg_hash, "path": str(store_pkg_path)})
+                if repair:
+                    for link in self.registry.get_links_for_package(pkg_hash):
+                        self.linker.remove_link(Path(link["link_path"]))
+                    self.registry.remove_package(pkg_hash)
+                    repaired.append({"hash": pkg_hash, "action": "removed_missing_package_and_links"})
+                continue
+
+            current_hash = self._generate_content_hash(store_pkg_path)
+            if current_hash != pkg_hash:
+                corrupted.append({
+                    "hash": pkg_hash,
+                    "actual_hash": current_hash,
+                    "path": str(store_pkg_path),
+                })
+                if repair:
+                    for link in self.registry.get_links_for_package(pkg_hash):
+                        self.linker.remove_link(Path(link["link_path"]))
+                    self.registry.remove_package(pkg_hash)
+                    make_store_writable(store_pkg_path)
+                    shutil.rmtree(store_pkg_path, onerror=handle_remove_readonly)
+                    repaired.append({"hash": pkg_hash, "action": "purged_corrupted_package_and_links"})
+            else:
+                valid.append({"hash": pkg_hash, "path": str(store_pkg_path)})
+
+        if self.store_path.exists():
+            for child in self.store_path.iterdir():
+                if child.is_dir() and child.name not in registered_hashes:
+                    calc_hash = self._generate_content_hash(child)
+                    if calc_hash != child.name:
+                        corrupted.append({
+                            "hash": child.name,
+                            "actual_hash": calc_hash,
+                            "path": str(child),
+                        })
+                        if repair:
+                            make_store_writable(child)
+                            shutil.rmtree(child, onerror=handle_remove_readonly)
+                            repaired.append({"hash": child.name, "action": "purged_corrupted_untracked_dir"})
+
+        return {
+            "valid": valid,
+            "corrupted": corrupted,
+            "missing": missing,
+            "repaired": repaired,
+        }
 
     def scan_for_duplicates(self, project_paths: List[Path], target_dirs: Optional[List[str]] = None) -> DuplicateReport:
         """Scan project paths for duplicate dependency directories."""
