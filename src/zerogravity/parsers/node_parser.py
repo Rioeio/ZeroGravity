@@ -19,6 +19,34 @@ _YARN_ENTRY_RE = re.compile(
 )
 
 
+def _clean_jsonc(content: str) -> str:
+    """Tolerantly strip comments and trailing commas from JSONC content."""
+    pattern = r'("(?:\\.|[^"\\])*")|//[^\r\n]*|/\*[\s\S]*?\*/'
+
+    def _repl(m: re.Match) -> str:
+        return m.group(1) if m.group(1) is not None else ""
+
+    cleaned = re.sub(pattern, _repl, content)
+    return re.sub(r',\s*([\]}])', r'\1', cleaned)
+
+
+def _parse_yarn_berry_selector(selector: str) -> tuple[str, bool]:
+    """Derive package name and whether it is workspace-internal from Yarn Berry selector."""
+    sel = selector.strip().strip('"').strip("'")
+    if "@workspace:" in sel:
+        return sel.split("@workspace:")[0], True
+    if "@npm:" in sel:
+        return sel.split("@npm:")[0], False
+    if "@patch:" in sel:
+        return sel.split("@patch:")[0], False
+    if "@git:" in sel:
+        return sel.split("@git:")[0], False
+    at_idx = sel.rfind("@")
+    if at_idx > 0:
+        return sel[:at_idx], False
+    return sel, False
+
+
 def _yarn_selector_name(selector: str) -> str:
     """Extract the package name from one yarn.lock selector ('name@range')."""
     selector = selector.strip().strip('"')
@@ -268,7 +296,15 @@ class NodeParser(BaseParser):
         lockfile_path = None
         lockfile_name = None
 
-        for lock_name in ["package-lock.json", "yarn.lock", "pnpm-lock.yaml"]:
+        candidate_locks = [
+            "package-lock.json",
+            "npm-shrinkwrap.json",
+            "yarn.lock",
+            "pnpm-lock.yaml",
+            "bun.lock",
+            "bun.lockb",
+        ]
+        for lock_name in candidate_locks:
             lp = path / lock_name
             if lp.is_file():
                 lockfile_present = True
@@ -277,11 +313,15 @@ class NodeParser(BaseParser):
                 manifest_files.append(str(lp))
                 break
 
+        if lockfile_name == "bun.lockb":
+            metadata["bun_lockb_present"] = True
+
         if lockfile_path and lockfile_name:
-            resolved_map = {}
+            resolved_map: dict[str, str] = {}
+            workspace_internal_pkgs: set[str] = set()
             direct_dep_names = {dep.name for dep in dependencies}
 
-            if lockfile_name == "package-lock.json":
+            if lockfile_name in ("package-lock.json", "npm-shrinkwrap.json"):
                 try:
                     with open(lockfile_path, "r", encoding="utf-8") as f:
                         lock_data = json.load(f)
@@ -289,26 +329,50 @@ class NodeParser(BaseParser):
                     if "packages" in lock_data:
                         for k, v in lock_data["packages"].items():
                             if k.startswith("node_modules/"):
-                                pkg_name = k[len("node_modules/"):]
-                                resolved_map[pkg_name] = v.get("version")
-                            elif k == "" and "dependencies" in v:
-                                pass
-                    elif "dependencies" in lock_data:
-                        for k, v in lock_data["dependencies"].items():
-                            resolved_map[k] = v.get("version")
+                                pkg_name = k.split("node_modules/")[-1]
+                                ver = v.get("version")
+                                if ver:
+                                    resolved_map[pkg_name] = str(ver)
+
+                    if "dependencies" in lock_data:
+                        def _collect_v1(deps: dict) -> None:
+                            for name, info in deps.items():
+                                if isinstance(info, dict):
+                                    ver = info.get("version")
+                                    if ver and name not in resolved_map:
+                                        resolved_map[name] = str(ver)
+                                    if "dependencies" in info and isinstance(info["dependencies"], dict):
+                                        _collect_v1(info["dependencies"])
+                        _collect_v1(lock_data["dependencies"])
                 except (json.JSONDecodeError, OSError):
                     pass
             elif lockfile_name == "yarn.lock":
                 try:
                     with open(lockfile_path, "r", encoding="utf-8") as f:
                         content = f.read()
-                    for match in _YARN_ENTRY_RE.finditer(content):
-                        selectors_blob, pkg_version = match.group(1), match.group(2)
-                        first_selector = selectors_blob.split(",")[0]
-                        pkg_name = _yarn_selector_name(first_selector)
-                        if pkg_name:
-                            resolved_map[pkg_name] = pkg_version
-                except OSError:
+
+                    if "__metadata:" in content:
+                        berry_data = yaml.safe_load(content) or {}
+                        if isinstance(berry_data, dict):
+                            for key, val in berry_data.items():
+                                if key == "__metadata" or not isinstance(val, dict):
+                                    continue
+                                ver = val.get("version")
+                                if ver is not None:
+                                    for part in str(key).split(","):
+                                        pkg_name, is_ws = _parse_yarn_berry_selector(part)
+                                        if pkg_name:
+                                            resolved_map[pkg_name] = str(ver)
+                                            if is_ws:
+                                                workspace_internal_pkgs.add(pkg_name)
+                    else:
+                        for match in _YARN_ENTRY_RE.finditer(content):
+                            selectors_blob, pkg_version = match.group(1), match.group(2)
+                            first_selector = selectors_blob.split(",")[0]
+                            pkg_name = _yarn_selector_name(first_selector)
+                            if pkg_name:
+                                resolved_map[pkg_name] = pkg_version
+                except (OSError, yaml.YAMLError):
                     pass
             elif lockfile_name == "pnpm-lock.yaml":
                 try:
@@ -321,13 +385,54 @@ class NodeParser(BaseParser):
                             resolved_map[pkg_name] = pkg_version
                 except (OSError, yaml.YAMLError):
                     pass
+            elif lockfile_name == "bun.lock":
+                try:
+                    with open(lockfile_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    data = json.loads(_clean_jsonc(content))
+                    pkgs = data.get("packages", {})
+                    if isinstance(pkgs, dict):
+                        for k, v in pkgs.items():
+                            if isinstance(v, list) and v:
+                                item = str(v[0])
+                                at_idx = item.rfind("@")
+                                if at_idx > 0:
+                                    resolved_map[item[:at_idx]] = item[at_idx + 1:]
+                                else:
+                                    at_idx2 = k.rfind("@")
+                                    if at_idx2 > 0:
+                                        resolved_map[k[:at_idx2]] = k[at_idx2 + 1:]
+                            elif isinstance(v, dict):
+                                ver = v.get("version")
+                                at_idx = k.rfind("@")
+                                pkg_name = k[:at_idx] if at_idx > 0 else k
+                                if ver:
+                                    resolved_map[pkg_name] = str(ver)
+                            elif isinstance(v, str):
+                                at_idx = v.rfind("@")
+                                if at_idx > 0:
+                                    resolved_map[v[:at_idx]] = v[at_idx + 1:]
+                                else:
+                                    at_idx2 = k.rfind("@")
+                                    pkg_name = k[:at_idx2] if at_idx2 > 0 else k
+                                    resolved_map[pkg_name] = v
+                except (json.JSONDecodeError, OSError):
+                    pass
+
+            if lockfile_name != "bun.lockb" and len(resolved_map) == 0:
+                metadata["lockfile_zero_resolved"] = True
 
             for dep in dependencies:
                 if dep.name in resolved_map:
                     dep.resolved_version = resolved_map[dep.name]
+                if dep.name in workspace_internal_pkgs:
+                    dep.metadata["workspace_internal"] = True
 
             for pkg_name, pkg_version in resolved_map.items():
                 if pkg_version and pkg_name not in direct_dep_names:
+                    meta: dict = {"transitive": True}
+                    if pkg_name in workspace_internal_pkgs:
+                        meta["workspace_internal"] = True
                     dependencies.append(
                         Dependency(
                             name=pkg_name,
@@ -336,7 +441,7 @@ class NodeParser(BaseParser):
                             dep_type=DependencyType.PRODUCTION,
                             extras=[],
                             source=lockfile_name,
-                            metadata={"transitive": True}
+                            metadata=meta,
                         )
                     )
 

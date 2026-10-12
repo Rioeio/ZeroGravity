@@ -55,7 +55,7 @@ ZeroGravity doesn't just surface issues — it resolves them. `zg heal` detects 
 
 ### 4. Multi-Ecosystem Transitive Lockfile Parsing
 Performs deep lockfile inspection for:
-- **Node.js**: `package-lock.json` (v1/v2/v3), `yarn.lock` (v1 & Berry multi-selectors), `pnpm-lock.yaml` (pnpm 6–11 key schemas).
+- **Node.js**: `package-lock.json` (v1/v2/v3), `npm-shrinkwrap.json`, `yarn.lock` (v1 & Berry), `pnpm-lock.yaml` (pnpm 6–11), `bun.lock`.
 - **Python**: `requirements.txt`, `pyproject.toml`, `Pipfile`, `setup.cfg`, `poetry.lock`, `Pipfile.lock`, `uv.lock`, `pdm.lock`.
 - **Rust**: `Cargo.toml`, `Cargo.lock`.
 - **Go**: `go.mod`, `go.sum`.
@@ -270,7 +270,7 @@ ZeroGravity follows a deterministic exit code contract for CI/CD pipelines:
 
 | Ecosystem | Manifest Files | Lockfiles Supported | System Binary Dependencies |
 | :--- | :--- | :--- | :--- |
-| **Node.js** | `package.json` | `package-lock.json`<br>`yarn.lock`<br>`pnpm-lock.yaml` | `python`, `make`, `gcc`, `pkg-config`, `cairo`, `vips` |
+| **Node.js** | `package.json` | `package-lock.json`<br>`npm-shrinkwrap.json`<br>`yarn.lock`<br>`pnpm-lock.yaml`<br>`bun.lock` | `python`, `make`, `gcc`, `pkg-config`, `cairo`, `vips` |
 | **Python** | `requirements.txt`<br>`pyproject.toml`<br>`Pipfile`<br>`setup.cfg` | `poetry.lock`<br>`Pipfile.lock`<br>`uv.lock`<br>`pdm.lock` | `openssl`, `pg_config`, `mysql_config`, `libxml2`, `libxslt`, `libsodium`, `libffi`, `gcc` |
 | **Rust** | `Cargo.toml` | `Cargo.lock` | `rustc`, `cargo` |
 | **Go** | `go.mod` | `go.sum` | `go` |

@@ -172,6 +172,33 @@ def _check_lockfiles(manifest: ProjectManifest) -> List[Issue]:
             remediation="Generate a lockfile for reproducible builds.",
             metadata={}
         ))
+    elif manifest.metadata.get("bun_lockb_present"):
+        issues.append(Issue(
+            severity=Severity.INFO,
+            category=IssueCategory.LOCKFILE_MISSING,
+            message="bun.lockb is binary and not parsed: upgrade to Bun 1.2+ or run bun install --save-text-lockfile",
+            source_project=str(manifest.project_path),
+            affected_binary="bun",
+            expected="text bun.lock",
+            actual="binary bun.lockb",
+            remediation="Run bun install --save-text-lockfile to upgrade to text format.",
+            metadata={}
+        ))
+    elif manifest.metadata.get("lockfile_zero_resolved") or (
+        len(manifest.dependencies) > 0 and not any(d.resolved_version for d in manifest.dependencies)
+    ):
+        fname = manifest.lockfile_path.name if manifest.lockfile_path else "lockfile"
+        issues.append(Issue(
+            severity=Severity.WARNING,
+            category=IssueCategory.LOCKFILE_MISSING,
+            message=f"Lockfile {fname} is present but yielded zero resolved packages.",
+            source_project=str(manifest.project_path),
+            affected_binary="",
+            expected="resolved packages",
+            actual="zero resolved packages",
+            remediation="Ensure lockfile is valid and compatible.",
+            metadata={}
+        ))
     return issues
 
 def detect_conflicts(
