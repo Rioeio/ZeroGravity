@@ -6,6 +6,7 @@ import shutil
 from typing import Any, Dict
 
 from zerogravity.resolver.models import VersionManagerInfo
+from zerogravity.scanner.subprocess_utils import run_command
 
 VERSION_MANAGERS: Dict[str, Dict[str, Any]] = {
     "nvm": {
@@ -57,26 +58,16 @@ async def detect_version_manager(name: str, detection_config: Dict[str, Any]) ->
     if detected:
         if version_cmd:
             try:
-                proc = await asyncio.create_subprocess_exec(
-                    *version_cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=2.0)
-                if proc.returncode == 0:
+                returncode, stdout, _ = await run_command(version_cmd, timeout=2.0)
+                if returncode == 0:
                     active_version = stdout.decode("utf-8", errors="ignore").strip()
             except Exception:
                 pass
 
         if list_cmd:
             try:
-                proc = await asyncio.create_subprocess_exec(
-                    *list_cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=2.0)
-                if proc.returncode == 0:
+                returncode, stdout, _ = await run_command(list_cmd, timeout=2.0)
+                if returncode == 0:
                     lines = stdout.decode("utf-8", errors="ignore").splitlines()
                     installed_versions = [line.strip().strip("*").strip() for line in lines if line.strip()]
             except Exception:

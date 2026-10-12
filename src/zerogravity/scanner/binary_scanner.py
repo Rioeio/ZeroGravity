@@ -13,6 +13,7 @@ from zerogravity.resolver.binary_lookup import (
     lookup_system_deps,
 )
 from zerogravity.resolver.models import BinaryProbe
+from zerogravity.scanner.subprocess_utils import run_command
 
 BASELINE_RUNTIME_BINARIES: list[str] = [
     "node",
@@ -120,13 +121,7 @@ async def probe_binary(name: str, command: List[str]) -> BinaryProbe:
             exec_cmd = ["cmd.exe", "/c", path] + command[1:]
 
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *exec_cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-
-        stdout_data, stderr_data = await asyncio.wait_for(proc.communicate(), timeout=5.0)
+        returncode, stdout_data, stderr_data = await run_command(exec_cmd, timeout=5.0)
 
         stdout_str = stdout_data.decode("utf-8", errors="ignore").strip()
         stderr_str = stderr_data.decode("utf-8", errors="ignore").strip()
@@ -134,14 +129,14 @@ async def probe_binary(name: str, command: List[str]) -> BinaryProbe:
         output = stdout_str or stderr_str
 
         # java outputs version to stderr, handle differently? it will be in output
-        if proc.returncode != 0 and name != "java":
+        if returncode != 0 and name != "java":
             detail = output or "no output"
             return BinaryProbe(
                 name=name,
                 installed=True,
                 path=path,
                 version=None,
-                error=f"'{' '.join(command)}' exited with code {proc.returncode}: {detail}",
+                error=f"'{' '.join(command)}' exited with code {returncode}: {detail}",
             )
 
         match = re.search(r"(\d+\.\d+(?:\.\d+)?)", output)
