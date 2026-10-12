@@ -55,7 +55,12 @@ def doctor_command(
     print_banner()
     console.print("[zg.accent]Running full diagnostic...[/]\n")
 
-    config = load_config(project_path)
+    from zerogravity.config import ConfigError
+    try:
+        config = load_config(project_path)
+    except ConfigError as err:
+        print_error(str(err))
+        raise typer.Exit(code=2)
 
     with console.status("[zg.accent]Parsing project manifests...[/]", spinner="dots"):
         manifests = detect_and_parse(project_path)

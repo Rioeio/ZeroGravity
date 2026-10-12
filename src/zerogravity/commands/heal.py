@@ -43,7 +43,12 @@ def heal_command(
 
     print_banner()
 
-    config = load_config(project_path)
+    from zerogravity.config import ConfigError
+    try:
+        config = load_config(project_path)
+    except ConfigError as err:
+        print_error(str(err))
+        raise typer.Exit(code=2)
 
     with console.status("[zg.accent]Scanning environment...[/]", spinner="dots"):
         manifests = detect_and_parse(project_path)

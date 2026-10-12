@@ -12,7 +12,7 @@ import typer
 from rich import box
 from rich.table import Table
 
-from zerogravity.config import load_config
+from zerogravity.config import ConfigError, load_config
 from zerogravity.parsers.registry import detect_and_parse
 from zerogravity.resolver.binary_lookup import lookup_system_deps
 from zerogravity.ui.console import console, print_error
@@ -45,7 +45,11 @@ def why_command(
         print_error(f"Not a directory: {project_path}")
         raise typer.Exit(code=1)
 
-    config = load_config(project_path)
+    try:
+        config = load_config(project_path)
+    except ConfigError as err:
+        print_error(str(err))
+        raise typer.Exit(code=2)
     manifests = detect_and_parse(project_path)
 
     if not manifests:

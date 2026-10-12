@@ -13,6 +13,7 @@ from rich.console import Console
 from zerogravity import __version__
 from zerogravity.commands import (
     audit,
+    config_cmd,
     dedup,
     doctor,
     heal,
@@ -51,6 +52,7 @@ app.command(name="audit-security", help="[bold cyan]Audit[/] dependencies for kn
 app.command(name="why", help="[bold cyan]Trace[/] one dependency's resolution, lockfile, versions, and system binary requirements.")(why.why_command)
 app.command(name="doctor", help="[bold cyan]Diagnose[/] your project — audit, scan, and offer to heal in one guided flow.")(doctor.doctor_command)
 app.add_typer(history.history_app, name="history", help="[bold cyan]Manage[/] local scan history.")
+app.add_typer(config_cmd.config_app, name="config", help="[bold cyan]Inspect[/] and validate project configuration.")
 
 
 # ── Version callback ────────────────────────────────────────────────────────

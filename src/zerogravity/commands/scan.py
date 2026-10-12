@@ -13,7 +13,7 @@ from typing import Optional
 
 import typer
 
-from zerogravity.config import load_config
+from zerogravity.config import ConfigError, load_config
 from zerogravity.ui.console import console, print_banner, print_error, print_info, print_section
 
 EXCLUDED_DIR_NAMES = {
@@ -143,13 +143,21 @@ def scan_command(
         print_banner()
 
     # Load configuration
-    config = load_config(project_paths[0] if project_paths else None)
+    try:
+        config = load_config(project_paths[0] if project_paths else None)
+    except ConfigError as err:
+        print_error(str(err))
+        raise typer.Exit(code=2)
 
     # ── Step 1: Parse project manifests ──────────────────────────────────
     manifests = []
     with console.status("[zg.accent]Parsing project manifests...[/]", spinner="dots"):
         for project_path in project_paths:
-            proj_config = load_config(project_path) if len(project_paths) > 1 else config
+            try:
+                proj_config = load_config(project_path) if len(project_paths) > 1 else config
+            except ConfigError as err:
+                print_error(str(err))
+                raise typer.Exit(code=2)
             if recursive:
                 for sub_path in _iter_scan_dirs(project_path, extra_excludes=proj_config.exclude):
                     sub_manifests = detect_and_parse(sub_path, use_cache=not no_cache)
