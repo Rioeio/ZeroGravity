@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-10-12
+
+### Added
+- **Security & Vulnerability Scanning**:
+  - Full OSV.dev advisory hydration via `GET /v1/vulns/{id}` and automatic pagination token following.
+  - CVSS v3.1 base score computation with official roundup formula and severity mapping.
+  - CI exit code contract: `--fail-on` (`low`, `medium`, `high`, `critical`) and `--fail-on-outdated` (`patch`, `minor`, `major`).
+  - Privacy guard preventing public queries for scoped packages, internal git/file URLs, and GOPRIVATE modules.
+- **Ecosystem & Lockfile Support**:
+  - Python: `uv.lock`, `pdm.lock`, PEP 735 `[dependency-groups]`, `setup.cfg`, and PEP 503 normalization.
+  - Node: Yarn Berry (`yarn.lock` with metadata), Bun 1.2+ (`bun.lock`), `npm-shrinkwrap.json`, and npm `package-lock.json` v1.
+  - Crates.io and Go proxy module freshness checks with Go case-encoded module path support (`!`).
+- **State & System Reliability**:
+  - Atomic state writes with temporary files and cross-platform locking (`portalocker`).
+  - Corrupt state file quarantine with timestamped backups and `zg state doctor [--prune]`.
+  - RFC 3339 UTC timestamps throughout state, history, and cache storage.
+  - Version range intersection math for cross-project conflict detection with `zg history list` and `zg history clear`.
+- **Toolchain & Deduplication Safety**:
+  - Extended version manager probing for `asdf`, `mise`, and `fnm`.
+  - Process tree termination on Windows (`taskkill /T /F`) and POSIX process groups.
+  - Read-only dedup store permissions (`0o555` directories, `0o444` files) with temporary write context manager.
+  - Atomic restore staging in sibling temporary directories preventing link loss on failure.
+  - Store integrity verification command: `zg dedup verify [--repair]` and orphan cleanup `zg dedup clean`.
+- **Packaging & Repo Hygiene**:
+  - PEP 561 `py.typed` marker file for mypy compatibility.
+  - Dynamic versioning single-sourced via hatchling from `src/zerogravity/__init__.py`.
+  - Official MIT `LICENSE`, `SECURITY.md`, and `CONTRIBUTING.md`.
+  - Multi-platform CI release workflow (`release.yml`) and Dependabot monthly updates.
+
 ## [0.3.0] - 2026-08-30
 
 ### Added

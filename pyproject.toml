@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "zerogravity"
-version = "0.3.0"
+dynamic = ["version"]
 description = "Bridge the gap between project dependencies and your local OS. Deep binary mapping, cross-project conflict detection, smart deduplication, and automated environment self-healing."
 readme = "README.md"
 license = "MIT"
@@ -52,8 +52,20 @@ Homepage = "https://github.com/Rioeio/ZeroGravity"
 Repository = "https://github.com/Rioeio/ZeroGravity"
 Issues = "https://github.com/Rioeio/ZeroGravity/issues"
 
+[tool.hatch.version]
+path = "src/zerogravity/__init__.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/zerogravity"]
+include = ["src/zerogravity/py.typed"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/zerogravity",
+    "LICENSE",
+    "README.md",
+    "pyproject.toml",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

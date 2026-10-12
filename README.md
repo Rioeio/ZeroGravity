@@ -137,8 +137,17 @@ zg dedup optimize ./node_modules --dry-run
 # Optimize a dependency directory (symlink to central store)
 zg dedup optimize ./node_modules
 
-# Restore a linked folder back to a physical copy
+# Restore a linked folder back to a physical copy (atomic swap)
 zg dedup restore ./node_modules
+
+# Verify store integrity against content hashes
+zg dedup verify
+
+# Repair or purge damaged store entries and broken links
+zg dedup verify --repair
+
+# Clean and prune unreferenced orphan packages
+zg dedup clean
 
 # View total disk space savings
 zg dedup status
@@ -149,6 +158,36 @@ Display the system health dashboard at a glance.
 
 ```bash
 zg status
+```
+
+### `zg state doctor`
+Inspect local state and quarantine health, with optional cleanup:
+
+```bash
+# Check state files and quarantined corruption logs
+zg state doctor
+
+# Prune quarantined corrupt state files
+zg state doctor --prune
+```
+
+### `zg config check [PATH]`
+Verify configuration file syntax, valid types, and inspect effective precedence:
+
+```bash
+zg config check
+```
+
+### `zg history`
+Manage persistent cross-project scan history:
+
+```bash
+# List all recorded projects in scan history
+zg history list
+
+# Clear all scan history or for a specific path
+zg history clear
+zg history clear --path ~/projects/myapp
 ```
 
 ### `zg doctor [PATH]`
@@ -178,11 +217,13 @@ zg why lodash --format json
 ```
 
 ### `zg outdated [PATHS...]`
-Check package registries for available dependency updates.
+Check package registries (npm, PyPI, Crates.io, Go proxy) for available dependency updates.
 
 ```bash
 zg outdated
+zg outdated --include-transitive
 zg outdated --format json
+zg outdated --fail-on-outdated minor
 ```
 
 ### `zg audit-security [PATHS...]`
@@ -190,6 +231,7 @@ Audit dependencies for known CVEs and security advisories via OSV.dev.
 
 ```bash
 zg audit-security ~/projects/myapp
+zg audit-security --fail-on high
 ```
 
 ### `zg init`
@@ -197,6 +239,24 @@ Generate a `.zerogravity.toml` configuration file with sensible defaults.
 
 ```bash
 zg init
+```
+
+---
+
+## CI / CD Exit Code Contract
+
+ZeroGravity enforces a strict, fail-closed exit code contract for CI/CD gates:
+
+- **`0`**: Scan passed cleanly with no findings at or above configured thresholds.
+- **`1`**: Findings detected at or above the failure threshold (`--fail-on` or `--fail-on-outdated`).
+- **`2`**: Tool error, configuration syntax error (`ConfigError`), or incomplete scan due to network/registry failure while a gating threshold is enabled.
+
+```bash
+# Fail CI build on any high or critical vulnerability:
+zg scan --fail-on high
+
+# Fail CI build on any major outdated dependency:
+zg outdated --fail-on-outdated major
 ```
 
 ---
