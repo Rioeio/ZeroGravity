@@ -157,7 +157,7 @@ def doctor_command(
     print_section("Step 3/3 — Heal")
 
     engine = HealingEngine()
-    plans = engine.plan_remediations(report, snapshot)
+    plans = engine.plan_remediations(report, snapshot, config=config)
 
     if not plans:
         if critical_issues or warning_issues:

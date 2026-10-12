@@ -58,6 +58,9 @@ def config_check(
     hist_source = file_source if (has_file and cfg.history_max_entries != 1000) else "default"
     table.add_row("history.max_entries", str(cfg.history_max_entries), hist_source)
 
+    heal_source = file_source if (has_file and cfg.healing_prefer) else "default"
+    table.add_row("healing.prefer", str(cfg.healing_prefer) if cfg.healing_prefer else "[]", heal_source)
+
     console.print(table)
     if has_file:
         console.print(f"[zg.ok]Configuration file:[/] {cfg.config_path}")

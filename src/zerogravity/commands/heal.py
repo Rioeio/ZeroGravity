@@ -72,7 +72,7 @@ def heal_command(
     render_conflict_report(report)
 
     engine = HealingEngine()
-    plans = engine.plan_remediations(report, snapshot)
+    plans = engine.plan_remediations(report, snapshot, config=config)
 
     if not plans:
         print_info("No remediations could be planned.")

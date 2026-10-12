@@ -12,36 +12,72 @@ from zerogravity.scanner.subprocess_utils import run_command
 logger = logging.getLogger(__name__)
 
 VERSION_MANAGERS: Dict[str, Dict[str, Any]] = {
+    "uv": {
+        "env_var": "UV_PYTHON_INSTALL_DIR",
+        "binary": "uv",
+        "version_cmd": ["uv", "--version"],
+        "list_cmd": ["uv", "python", "list", "--only-installed"],
+    },
+    "fnm": {
+        "env_var": "FNM_DIR",
+        "binary": "fnm",
+        "version_cmd": ["fnm", "current"],
+        "list_cmd": ["fnm", "list"],
+    },
+    "volta": {
+        "env_var": "VOLTA_HOME",
+        "binary": "volta",
+        "version_cmd": ["volta", "list", "node"],
+        "list_cmd": ["volta", "list", "--format", "plain"],
+    },
+    "mise": {
+        "env_var": "MISE_DATA_DIR",
+        "binary": "mise",
+        "version_cmd": ["mise", "current"],
+        "list_cmd": ["mise", "ls"],
+    },
     "nvm": {
         "env_var": "NVM_DIR",
         "binary": "nvm.exe" if os.name == "nt" else "nvm",
         "version_cmd": ["nvm", "current"],
-        "list_cmd": ["nvm", "ls"]
+        "list_cmd": ["nvm", "ls"],
+    },
+    "nvm-windows": {
+        "env_var": "NVM_HOME",
+        "binary": "nvm.exe" if os.name == "nt" else "nvm",
+        "version_cmd": ["nvm", "version"],
+        "list_cmd": ["nvm", "list"],
     },
     "pyenv": {
         "env_var": "PYENV_ROOT",
         "binary": "pyenv",
         "version_cmd": ["pyenv", "version-name"],
-        "list_cmd": ["pyenv", "versions", "--bare"]
+        "list_cmd": ["pyenv", "versions", "--bare"],
+    },
+    "pyenv-win": {
+        "env_var": "PYENV_HOME",
+        "binary": "pyenv.bat" if os.name == "nt" else "pyenv",
+        "version_cmd": ["pyenv", "version-name"],
+        "list_cmd": ["pyenv", "versions", "--bare"],
     },
     "asdf": {
         "env_var": "ASDF_DIR",
         "binary": "asdf",
         "version_cmd": None,
-        "list_cmd": ["asdf", "list"]
+        "list_cmd": ["asdf", "list"],
     },
     "rbenv": {
         "env_var": "RBENV_ROOT",
         "binary": "rbenv",
         "version_cmd": ["rbenv", "version-name"],
-        "list_cmd": ["rbenv", "versions", "--bare"]
+        "list_cmd": ["rbenv", "versions", "--bare"],
     },
     "rustup": {
         "env_var": "RUSTUP_HOME",
         "binary": "rustup",
         "version_cmd": ["rustup", "default"],
-        "list_cmd": ["rustup", "toolchain", "list"]
-    }
+        "list_cmd": ["rustup", "toolchain", "list"],
+    },
 }
 
 async def detect_version_manager(name: str, detection_config: Dict[str, Any]) -> VersionManagerInfo:
@@ -72,7 +108,10 @@ async def detect_version_manager(name: str, detection_config: Dict[str, Any]) ->
                 returncode, stdout, _ = await run_command(list_cmd, timeout=2.0)
                 if returncode == 0:
                     lines = stdout.decode("utf-8", errors="ignore").splitlines()
-                    installed_versions = [line.strip().strip("*").strip() for line in lines if line.strip()]
+                    if name == "uv":
+                        installed_versions = [line.split()[0] for line in lines if line.strip()]
+                    else:
+                        installed_versions = [line.strip().strip("*").strip() for line in lines if line.strip()]
             except (asyncio.TimeoutError, OSError, RuntimeError) as err:
                 logger.debug("Failed querying installed versions for %s: %s", name, err, exc_info=True)
 

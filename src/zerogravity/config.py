@@ -94,6 +94,7 @@ class ZeroGravityConfig:
     ignore_issues: list[str] = field(default_factory=list)
     ignore_packages: list[str] = field(default_factory=list)
     history_max_entries: int = 1000
+    healing_prefer: list[str] = field(default_factory=list)
     config_path: Path | None = None
     warnings: list[str] = field(default_factory=list)
 
@@ -143,16 +144,18 @@ def parse_config_data(
     ignore_issues: list[str] = []
     ignore_packages: list[str] = []
     history_max_entries: int = 1000
+    healing_prefer: list[str] = []
     warnings: list[str] = []
 
-    known_sections = {"scan", "binary_map", "binary-map", "binaries", "ignore", "history"}
+    known_sections = {"scan", "binary_map", "binary-map", "binaries", "ignore", "history", "healing"}
     known_scan_keys = {"exclude"}
     known_ignore_keys = {"issues", "categories", "packages"}
     known_history_keys = {"max_entries"}
+    known_healing_keys = {"prefer"}
 
     for key in data:
         if key not in known_sections:
-            close = difflib.get_close_matches(key, ["scan", "binary_map", "ignore", "history"])
+            close = difflib.get_close_matches(key, ["scan", "binary_map", "ignore", "history", "healing"])
             if close:
                 msg = f"Unknown section or key '{key}'. Did you mean '{close[0]}'?"
             else:
@@ -269,6 +272,33 @@ def parse_config_data(
                 raise ConfigError("history.max_entries must be a positive integer", file=config_path, line=line, col=col)
             history_max_entries = raw_max
 
+    # 5. Healing section
+    if "healing" in data:
+        healing_section = data["healing"]
+        if not isinstance(healing_section, dict):
+            line, col = _find_key_location(file_content, "healing")
+            raise ConfigError("[healing] must be a section (table)", file=config_path, line=line, col=col)
+        for k in healing_section:
+            if k not in known_healing_keys:
+                close = difflib.get_close_matches(k, list(known_healing_keys))
+                if close:
+                    msg = f"Unknown key '{k}' in [healing]. Did you mean '{close[0]}'?"
+                else:
+                    msg = f"Unknown key '{k}' in [healing]."
+                warnings.append(msg)
+        if "prefer" in healing_section:
+            raw_prefer = healing_section["prefer"]
+            if isinstance(raw_prefer, list):
+                if not all(isinstance(x, str) for x in raw_prefer):
+                    line, col = _find_key_location(file_content, "prefer")
+                    raise ConfigError("healing.prefer must be a list of strings", file=config_path, line=line, col=col)
+                healing_prefer = [str(x).strip().lower() for x in raw_prefer if str(x).strip()]
+            elif isinstance(raw_prefer, str):
+                healing_prefer = [raw_prefer.strip().lower()]
+            else:
+                line, col = _find_key_location(file_content, "prefer")
+                raise ConfigError("healing.prefer must be a list of strings", file=config_path, line=line, col=col)
+
     from zerogravity.ui.console import console
     for w in warnings:
         console.print(f"[zg.warning]Warning:[/] {w}")
@@ -279,6 +309,7 @@ def parse_config_data(
         ignore_issues=ignore_issues,
         ignore_packages=ignore_packages,
         history_max_entries=history_max_entries,
+        healing_prefer=healing_prefer,
         config_path=config_path,
         warnings=warnings,
     )

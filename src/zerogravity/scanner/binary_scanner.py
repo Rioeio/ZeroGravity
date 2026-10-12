@@ -115,10 +115,7 @@ async def probe_binary(name: str, command: List[str]) -> BinaryProbe:
     if not path:
         return BinaryProbe(name=name, installed=False, path=None, version=None, error=None)
 
-    exec_cmd = list(command)
-    if sys.platform == "win32" and path:
-        if path.lower().endswith((".cmd", ".bat")):
-            exec_cmd = ["cmd.exe", "/c", path] + command[1:]
+    exec_cmd = [path] + command[1:]
 
     try:
         returncode, stdout_data, stderr_data = await run_command(exec_cmd, timeout=5.0)
