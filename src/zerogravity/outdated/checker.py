@@ -134,4 +134,6 @@ def check_outdated_dependencies(
     return OutdatedReport(
         packages=outdated_pkgs,
         scanned_dependencies=scanned_count,
+        errors=list(client.errors),
+        complete=client.complete,
     )

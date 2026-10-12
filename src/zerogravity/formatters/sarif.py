@@ -188,6 +188,30 @@ def format_sarif(
         # Include default rule definition if no issues were reported
         rules = list(RULE_DEFINITIONS.values())[:1]
 
+    invocations: list[dict[str, Any]] = []
+    is_successful = True
+    notifications: list[dict[str, Any]] = []
+
+    if security_report and not getattr(security_report, "complete", True):
+        is_successful = False
+        for err in getattr(security_report, "errors", []):
+            notifications.append({
+                "message": {"text": err},
+                "level": "error",
+            })
+        if not notifications:
+            notifications.append({
+                "message": {"text": "Security vulnerability scan was incomplete."},
+                "level": "error",
+            })
+
+    inv_obj: dict[str, Any] = {
+        "executionSuccessful": is_successful,
+    }
+    if notifications:
+        inv_obj["toolExecutionNotifications"] = notifications
+    invocations.append(inv_obj)
+
     sarif_doc = {
         "$schema": SARIF_SCHEMA_URI,
         "version": SARIF_VERSION,
@@ -201,6 +225,7 @@ def format_sarif(
                         "rules": rules,
                     }
                 },
+                "invocations": invocations,
                 "results": results,
             }
         ],

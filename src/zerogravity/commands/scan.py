@@ -99,6 +99,16 @@ def scan_command(
         "--check-host-anyway",
         help="Check host system binaries even for containerized/devcontainer projects.",
     ),
+    fail_on: str = typer.Option(
+        "none",
+        "--fail-on",
+        help="Fail with exit code 1 if vulnerabilities at or above threshold: none, low, medium, high, critical.",
+    ),
+    fail_on_outdated: str = typer.Option(
+        "none",
+        "--fail-on-outdated",
+        help="Fail with exit code 1 if outdated dependencies at or above threshold: none, patch, minor, major.",
+    ),
 ) -> None:
     """
     Scan project directories for dependency conflicts, missing binaries,
@@ -213,7 +223,7 @@ def scan_command(
     security_report = None
     if manifests:
         with console.status("[zg.accent]Querying OSV.dev vulnerability database...[/]", spinner="dots"):
-            security_report = scan_vulnerabilities(manifests, offline=offline)
+            security_report = scan_vulnerabilities(manifests, offline=offline, no_cache=no_cache)
         if output_format == "table":
             render_security_summary(security_report)
 
@@ -221,6 +231,14 @@ def scan_command(
     if output_format == "json":
         import json
         result = {
+            "complete": (
+                (not outdated_report or getattr(outdated_report, "complete", True))
+                and (not security_report or getattr(security_report, "complete", True))
+            ),
+            "errors": (
+                (getattr(outdated_report, "errors", []) if outdated_report else [])
+                + (getattr(security_report, "errors", []) if security_report else [])
+            ),
             "manifests": [
                 {
                     "project": str(m.project_path),
@@ -242,8 +260,16 @@ def scan_command(
                 for i in report.issues
             ],
             "summary": report.summary,
-            "outdated": outdated_report.summary if outdated_report else {},
-            "vulnerabilities": security_report.summary if security_report else {},
+            "outdated": {
+                "summary": outdated_report.summary,
+                "complete": getattr(outdated_report, "complete", True),
+                "errors": getattr(outdated_report, "errors", []),
+            } if outdated_report else {},
+            "vulnerabilities": {
+                "summary": security_report.summary,
+                "complete": getattr(security_report, "complete", True),
+                "errors": getattr(security_report, "errors", []),
+            } if security_report else {},
         }
         console.print_json(json.dumps(result))
     elif output_format == "sarif":
@@ -256,3 +282,61 @@ def scan_command(
     if heal:
         from zerogravity.commands.heal import heal_command
         heal_command(path=str(project_paths[0]) if project_paths else None, auto_approve=False)
+
+    # Evaluate fail-on and fail-on-outdated thresholds
+    scan_exit_code = 0
+    thresh_sec = fail_on.lower().strip()
+    if thresh_sec not in ("none", "low", "medium", "high", "critical"):
+        thresh_sec = "none"
+
+    if thresh_sec != "none" and security_report:
+        if not getattr(security_report, "complete", True):
+            scan_exit_code = max(scan_exit_code, 2)
+        else:
+            has_sec = False
+            if thresh_sec == "low":
+                has_sec = bool(
+                    security_report.critical_count
+                    or security_report.high_count
+                    or security_report.medium_count
+                    or security_report.low_count
+                )
+            elif thresh_sec == "medium":
+                has_sec = bool(
+                    security_report.critical_count
+                    or security_report.high_count
+                    or security_report.medium_count
+                )
+            elif thresh_sec == "high":
+                has_sec = bool(security_report.critical_count or security_report.high_count)
+            elif thresh_sec == "critical":
+                has_sec = bool(security_report.critical_count)
+
+            if has_sec:
+                scan_exit_code = max(scan_exit_code, 1)
+
+    thresh_out = fail_on_outdated.lower().strip()
+    if thresh_out not in ("none", "patch", "minor", "major"):
+        thresh_out = "none"
+
+    if thresh_out != "none" and outdated_report:
+        if not getattr(outdated_report, "complete", True):
+            scan_exit_code = max(scan_exit_code, 2)
+        else:
+            has_out = False
+            if thresh_out == "patch":
+                has_out = bool(
+                    outdated_report.major_count
+                    or outdated_report.minor_count
+                    or outdated_report.patch_count
+                )
+            elif thresh_out == "minor":
+                has_out = bool(outdated_report.major_count or outdated_report.minor_count)
+            elif thresh_out == "major":
+                has_out = bool(outdated_report.major_count)
+
+            if has_out:
+                scan_exit_code = max(scan_exit_code, 1)
+
+    if scan_exit_code != 0:
+        raise typer.Exit(code=scan_exit_code)

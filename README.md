@@ -250,6 +250,22 @@ will complete available options.
 
 ---
 
+## CI Exit-Code Contract
+
+ZeroGravity follows a deterministic exit code contract for CI/CD pipelines:
+
+| Exit Code | Meaning | Condition |
+| :--- | :--- | :--- |
+| `0` | Success / Clean | No issues detected at or above the threshold. An incomplete scan without an active threshold also exits `0` with a visible `INCOMPLETE` banner. |
+| `1` | Threshold Exceeded | Findings detected at or above `--fail-on` (`low`, `medium`, `high`, `critical`) or `--fail-on-outdated` (`patch`, `minor`, `major`). |
+| `2` | Tool Error / Gate Incomplete | CLI error, invalid configuration, or an incomplete scan while a threshold gate is active (failing closed). |
+
+### Flags
+- `--fail-on [none|low|medium|high|critical]`: Fail if security vulnerabilities meet or exceed the specified severity. (Default: `none`)
+- `--fail-on-outdated [none|patch|minor|major]`: Fail if outdated packages meet or exceed the update type. (Default: `none`)
+
+---
+
 ## Ecosystem Matrix
 
 | Ecosystem | Manifest Files | Lockfiles Supported | System Binary Dependencies |

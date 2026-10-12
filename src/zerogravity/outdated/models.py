@@ -48,6 +48,8 @@ class OutdatedReport:
     """Aggregated outdated analysis for all scanned projects."""
     packages: list[OutdatedPackage] = field(default_factory=list)
     scanned_dependencies: int = 0
+    errors: list[str] = field(default_factory=list)
+    complete: bool = True
 
     @property
     def major_count(self) -> int:

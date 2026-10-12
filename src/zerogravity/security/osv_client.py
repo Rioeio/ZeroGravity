@@ -79,6 +79,7 @@ class OSVClient:
         self,
         queries: list[dict[str, Any]],
         offline: bool = False,
+        no_cache: bool = False,
     ) -> list[list[dict[str, Any]]]:
         """
         Query OSV.dev in batches, follow pagination tokens, and hydrate full vulnerability records.
@@ -87,7 +88,7 @@ class OSVClient:
             return []
 
         results: list[list[dict[str, Any]]] = [[] for _ in queries]
-        cache = self._load_cache()
+        cache = self._load_cache() if not no_cache else {}
         now = time.time()
 
         queries_to_fetch: list[tuple[int, dict[str, Any]]] = []
@@ -98,7 +99,7 @@ class OSVClient:
             version = q.get("version", "")
             cache_key = f"{ecosystem}:{pkg_name.lower()}:{version}"
 
-            if cache_key in cache:
+            if not no_cache and cache_key in cache:
                 entry = cache[cache_key]
                 cached_time = entry.get("timestamp", 0)
                 if (now - cached_time < self.ttl_seconds) or offline:

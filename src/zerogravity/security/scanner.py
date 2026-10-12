@@ -130,6 +130,7 @@ def scan_vulnerabilities(
     manifests: list[ProjectManifest],
     offline: bool = False,
     osv_client: OSVClient | None = None,
+    no_cache: bool = False,
 ) -> SecurityReport:
     """
     Batch query OSV.dev for known vulnerabilities across resolved project dependencies.
@@ -195,7 +196,7 @@ def scan_vulnerabilities(
             complete=client.complete,
         )
 
-    batch_results = client.query_batch(queries, offline=offline)
+    batch_results = client.query_batch(queries, offline=offline, no_cache=no_cache)
     advisories: list[VulnerabilityAdvisory] = []
 
     for (manifest, pkg_name, ver, eco), vulns_list in zip(query_meta, batch_results, strict=False):

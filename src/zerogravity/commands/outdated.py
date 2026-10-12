@@ -44,6 +44,11 @@ def outdated_command(
         "--no-cache",
         help="Bypass scan-result cache and force full re-parsing.",
     ),
+    fail_on_outdated: str = typer.Option(
+        "none",
+        "--fail-on-outdated",
+        help="Fail with exit code 1 if outdated dependencies at or above threshold: none, patch, minor, major.",
+    ),
 ) -> None:
     """
     Check project dependencies against npm and PyPI registries for available updates.
@@ -94,6 +99,8 @@ def outdated_command(
 
     if output_format == "json":
         result = {
+            "complete": getattr(report, "complete", True),
+            "errors": getattr(report, "errors", []),
             "summary": report.summary,
             "packages": [
                 {
@@ -111,3 +118,22 @@ def outdated_command(
         console.print_json(json.dumps(result))
     else:
         render_outdated_report(report)
+
+    # Evaluate fail-on-outdated threshold and exit code contract
+    thresh = fail_on_outdated.lower().strip()
+    if thresh not in ("none", "patch", "minor", "major"):
+        thresh = "none"
+
+    if thresh != "none" and not getattr(report, "complete", True):
+        raise typer.Exit(code=2)
+
+    has_findings = False
+    if thresh == "patch":
+        has_findings = bool(report.major_count or report.minor_count or report.patch_count)
+    elif thresh == "minor":
+        has_findings = bool(report.major_count or report.minor_count)
+    elif thresh == "major":
+        has_findings = bool(report.major_count)
+
+    if has_findings:
+        raise typer.Exit(code=1)

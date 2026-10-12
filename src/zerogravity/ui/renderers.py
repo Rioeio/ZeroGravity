@@ -345,8 +345,20 @@ def render_outdated_report(report: Any) -> None:
     """Render full outdated dependency table."""
     print_section("Outdated Dependencies")
 
+    if not getattr(report, "complete", True):
+        console.print(
+            Panel(
+                "[bold white on red] INCOMPLETE SCAN [/] [bold red]Network or registry errors occurred during outdated dependency checks.[/]",
+                border_style="#ef5350",
+                padding=(0, 1),
+            )
+        )
+
     if not report.packages:
-        console.print("[zg.ok]  All dependencies are up to date.[/]")
+        if getattr(report, "complete", True):
+            console.print("[zg.ok]  All dependencies are up to date.[/]")
+        else:
+            console.print("[zg.warning]  Outdated scan was incomplete. Outdated packages may be undetected.[/]")
         return
 
     table = Table(
@@ -381,6 +393,16 @@ def render_outdated_report(report: Any) -> None:
 
 def render_outdated_summary(report: Any) -> None:
     """Render quick outdated summary metrics panel."""
+    if not getattr(report, "complete", True):
+        console.print(
+            Panel(
+                "[bold white on red] INCOMPLETE SCAN [/] [bold red]Registry checks encountered errors and could not complete fully.[/]",
+                border_style="#ef5350",
+                padding=(0, 1),
+            )
+        )
+        return
+
     summary_parts = []
     if report.major_count:
         summary_parts.append(f"[bold red]{report.major_count} major[/]")
@@ -410,8 +432,20 @@ def render_security_report(report: Any) -> None:
     """Render full vulnerability advisory table."""
     print_section("Security Vulnerability Audit")
 
+    if not getattr(report, "complete", True):
+        console.print(
+            Panel(
+                "[bold white on red] INCOMPLETE SCAN [/] [bold red]Network or database errors occurred during vulnerability check. Results are partial.[/]",
+                border_style="#ef5350",
+                padding=(0, 1),
+            )
+        )
+
     if not report.advisories:
-        console.print("[zg.ok]  No known vulnerabilities detected across scanned packages.[/]")
+        if getattr(report, "complete", True):
+            console.print("[zg.ok]  No known vulnerabilities detected across scanned packages.[/]")
+        else:
+            console.print("[zg.warning]  Scan was incomplete. Vulnerabilities may be undetected.[/]")
         return
 
     table = Table(
@@ -451,6 +485,16 @@ def render_security_report(report: Any) -> None:
 
 def render_security_summary(report: Any) -> None:
     """Render security metrics summary panel."""
+    if not getattr(report, "complete", True):
+        console.print(
+            Panel(
+                "[bold white on red] INCOMPLETE SCAN [/] [bold red]Security checks encountered errors and could not complete fully.[/]",
+                border_style="#ef5350",
+                padding=(0, 1),
+            )
+        )
+        return
+
     parts = []
     if report.critical_count:
         parts.append(f"[bold white on red]{report.critical_count} CRITICAL[/]")

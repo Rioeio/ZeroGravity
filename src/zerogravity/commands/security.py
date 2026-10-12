@@ -44,6 +44,11 @@ def security_command(
         "--no-cache",
         help="Bypass scan-result cache and force full re-parsing.",
     ),
+    fail_on: str = typer.Option(
+        "none",
+        "--fail-on",
+        help="Fail with exit code 1 if vulnerabilities at or above threshold: none, low, medium, high, critical.",
+    ),
 ) -> None:
     """
     Audit project dependencies for known security vulnerabilities using OSV.dev database.
@@ -90,10 +95,12 @@ def security_command(
         return
 
     with console.status("[zg.accent]Querying OSV.dev vulnerability database...[/]", spinner="dots"):
-        report = scan_vulnerabilities(manifests, offline=offline)
+        report = scan_vulnerabilities(manifests, offline=offline, no_cache=no_cache)
 
     if output_format == "json":
         result = {
+            "complete": getattr(report, "complete", True),
+            "errors": getattr(report, "errors", []),
             "summary": report.summary,
             "advisories": [
                 {
@@ -113,3 +120,24 @@ def security_command(
         console.print_json(json.dumps(result))
     else:
         render_security_report(report)
+
+    # Evaluate fail-on threshold and exit code contract
+    thresh = fail_on.lower().strip()
+    if thresh not in ("none", "low", "medium", "high", "critical"):
+        thresh = "none"
+
+    if thresh != "none" and not getattr(report, "complete", True):
+        raise typer.Exit(code=2)
+
+    has_findings = False
+    if thresh == "low":
+        has_findings = bool(report.critical_count or report.high_count or report.medium_count or report.low_count)
+    elif thresh == "medium":
+        has_findings = bool(report.critical_count or report.high_count or report.medium_count)
+    elif thresh == "high":
+        has_findings = bool(report.critical_count or report.high_count)
+    elif thresh == "critical":
+        has_findings = bool(report.critical_count)
+
+    if has_findings:
+        raise typer.Exit(code=1)
