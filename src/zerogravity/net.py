@@ -22,6 +22,10 @@ class NetworkError(Exception):
     """Base network error for ZeroGravity HTTP operations."""
 
 
+class NetworkNotAllowedError(NetworkError):
+    """Raised when an unmocked external network connection is attempted in tests."""
+
+
 class HTTPError(NetworkError):
     """HTTP error with status code."""
 

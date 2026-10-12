@@ -38,6 +38,7 @@ dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.25.0",
     "pytest-cov>=6.0.0",
+    "pytest-randomly>=3.15.0",
     "mypy>=1.10.0",
     "ruff>=0.4.0",
 ]
@@ -56,6 +57,9 @@ packages = ["src/zerogravity"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "integration: marks tests as integration tests (allowed network calls)",
+]
 
 [tool.ruff]
 line-length = 100

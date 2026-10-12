@@ -144,10 +144,9 @@ def test_history_list_and_clear_commands(tmp_path: Path, monkeypatch):
     """zg history list and zg history clear manage local scan history."""
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.setenv("ZEROGRAVITY_HOME", str(tmp_path / ".zerogravity"))
 
     mgr = ScanHistoryManager()
-    mgr.history_dir = tmp_path / ".zerogravity"
-    mgr.history_file = mgr.history_dir / "scan_history.json"
 
     p1 = tmp_path / "p1"
     p1.mkdir()

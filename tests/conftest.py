@@ -1,10 +1,53 @@
-from __future__ import annotations
-
+import socket
 from pathlib import Path
+from typing import Any, Generator
 
 import pytest
 
+from zerogravity.net import NetworkNotAllowedError
 from zerogravity.resolver.models import BinaryProbe, SystemSnapshot
+
+
+@pytest.fixture(autouse=True)
+def isolate_zerogravity_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Hermetically isolate ZEROGRAVITY_HOME, HOME, and USERPROFILE to tmp_path."""
+    zg_home = tmp_path / "hermetic_zg_home"
+    zg_home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("ZEROGRAVITY_HOME", str(zg_home))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    return zg_home
+
+
+@pytest.fixture(autouse=True)
+def network_guard(request: pytest.FixtureRequest) -> Generator[None, None, None]:
+    """Guard against unmocked external network calls in unit tests."""
+    if request.node.get_closest_marker("integration"):
+        yield
+        return
+
+    orig_connect = socket.socket.connect
+
+    def guarded_connect(self: socket.socket, address: Any) -> Any:
+        host: Any = None
+        if isinstance(address, tuple) and len(address) >= 1:
+            host = address[0]
+        elif isinstance(address, str):
+            host = address
+
+        if host in ("127.0.0.1", "localhost", "::1", "0.0.0.0", 0, None):
+            return orig_connect(self, address)
+
+        raise NetworkNotAllowedError(
+            f"Network connection to {address} blocked. "
+            "Mock external network calls or mark test with @pytest.mark.integration."
+        )
+
+    socket.socket.connect = guarded_connect  # type: ignore[assignment]
+    try:
+        yield
+    finally:
+        socket.socket.connect = orig_connect  # type: ignore[assignment]
 
 
 @pytest.fixture(autouse=True)
